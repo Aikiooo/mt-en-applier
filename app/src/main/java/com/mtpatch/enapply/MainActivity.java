@@ -37,12 +37,15 @@ public class MainActivity extends Activity {
                     + "cad73e991807559422ab03e01424a9d3/"
                     + "b7499781b4d69361fc70fcf2ee08c1ce/__data";
 
-    /** Candidate locations of the live language bundle. The asset-hash subfolder
-     *  changes on some game updates, and the game also keeps a mirrored copy
-     *  under files/il2cpp/<m>/UnityCache/Shared — so resolve at apply time. */
+    /** Candidate locations of the live language bundle. The language pack lives
+     *  under the STABLE group folder cad73e99…; only the asset-hash child changes
+     *  per update. NEVER broaden this glob: UnityCache holds hundreds of other
+     *  asset bundles under sibling group folders. */
     private static final String GAME_CACHE_GLOB =
-            "/sdcard/Android/data/jp.gree_ent.mushoku/files/UnityCache/Shared/*/*/__data"
-                    + " /sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/*/UnityCache/Shared/*/*/__data";
+            "/sdcard/Android/data/jp.gree_ent.mushoku/files/UnityCache/Shared/"
+                    + "cad73e991807559422ab03e01424a9d3/*/__data"
+                    + " /sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/*/UnityCache/Shared/"
+                    + "cad73e991807559422ab03e01424a9d3/*/__data";
 
     private static final long EXPECTED_SIZE = 1779698L;
 
@@ -462,7 +465,7 @@ public class MainActivity extends Activity {
                     log("COPY FAILED for " + dest + "\n" + r);
                     continue;
                 }
-                service.exec("chmod 0666 '" + dest + "'");
+                service.exec("chmod 0666 '" + dest + "' 2>/dev/null");
 
                 String sz = service.exec("stat -c %s '" + dest + "' 2>/dev/null || wc -c < '" + dest + "'");
                 log("On-device size: " + sz.trim());
@@ -605,7 +608,12 @@ public class MainActivity extends Activity {
         }
         if (dests.isEmpty())
             throw new IllegalStateException("no language bundle found — run the game once first");
-        log("bundle: " + dests.get(0));
+
+        // source = NEWEST bundle (an old asset-hash folder may linger post-update)
+        String srcQ = service.exec("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
+                .replace("exit=0", "").trim();
+        String srcBundle = srcQ.startsWith("/sdcard/") ? srcQ.split("\n")[0] : dests.get(0);
+        log("source bundle (newest): " + srcBundle);
 
         // 2. stage bundle + global-metadata into our own dir (shell uid can read them)
         File dir = getExternalFilesDir(null);
@@ -613,7 +621,7 @@ public class MainActivity extends Activity {
         String q = dir.getAbsolutePath();
         File stockF = new File(dir, "stock_new.__data");
         File metaF = new File(dir, "global-metadata.dat");
-        String r1 = service.exec("cp '" + dests.get(0) + "' '" + q
+        String r1 = service.exec("cp '" + srcBundle + "' '" + q
                 + "/stock_new.__data' && echo OK1");
         if (!r1.contains("OK1")) throw new IllegalStateException("cannot read bundle:\n" + r1);
         String r2 = service.exec("cp '" + META_PATH + "' '" + q
@@ -691,7 +699,7 @@ public class MainActivity extends Activity {
         // 7. write back over every live copy
         for (String dest : dests) {
             String rr = service.exec("cp '" + outF.getAbsolutePath() + "' '" + dest
-                    + "' && chmod 0666 '" + dest + "' && echo CP_OK");
+                    + "' && echo CP_OK; chmod 0666 '" + dest + "' 2>/dev/null");
             if (!rr.contains("CP_OK"))
                 throw new IllegalStateException("write failed for " + dest + "\n" + rr);
             log("written: " + dest);
