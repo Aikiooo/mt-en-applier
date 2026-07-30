@@ -13,3 +13,5 @@ captures/
 # OS
 Thumbs.db
 .DS_Store
+
+_release_stage/

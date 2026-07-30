@@ -86,9 +86,9 @@ public class MainActivity extends Activity {
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            log("Shizuku service disconnected.");
+            log("Shizuku user service disconnected (direct shell fallback stays available).");
             service = null;
-            applyBtn.setEnabled(false);
+            applyBtn.setEnabled(shizukuReady);
             refreshStatus();
         }
     };
@@ -98,6 +98,8 @@ public class MainActivity extends Activity {
                 if (requestCode == REQ_SHIZUKU) {
                     if (grantResult == PackageManager.PERMISSION_GRANTED) {
                         log("Shizuku permission granted.");
+                        shizukuReady = true;
+                        ui.post(() -> applyBtn.setEnabled(true));
                         bindService();
                     } else {
                         log("Shizuku permission DENIED. Reopen app to retry.");
@@ -108,7 +110,13 @@ public class MainActivity extends Activity {
     /** Fires (possibly async) once the Shizuku server delivers its binder to our provider. */
     private final Shizuku.OnBinderReceivedListener binderReceivedListener = this::onShizukuReady;
     private final Shizuku.OnBinderDeadListener binderDeadListener = () -> {
-        log("Shizuku binder died (server stopped). Restart Shizuku and reopen the app.");
+        log("Shizuku binder died (server stopped). Restart Shizuku and reopen the app."
+                + "\nIf this happens right after \"Binding Shizuku user service…\", the"
+                + " phone's phantom-process/task killer is killing Shizuku. Fixes:\n"
+                + "1. Battery settings: set Shizuku to \"No restrictions\".\n"
+                + "2. One-time, via a PC: adb shell settings put global"
+                + " settings_enable_monitor_phantom_procs false");
+        shizukuReady = false;
         ui.post(() -> applyBtn.setEnabled(false));
         service = null;
         shizukuHandled = false;
@@ -121,7 +129,7 @@ public class MainActivity extends Activity {
 
         serviceArgs = new Shizuku.UserServiceArgs(
                 new ComponentName(getPackageName(), UserService.class.getName()))
-                .daemon(false)
+                .daemon(true)
                 .processNameSuffix("shizuku")
                 .debuggable(false)
                 .version(1);
@@ -157,6 +165,7 @@ public class MainActivity extends Activity {
         statusText.setTextSize(15);
         statusRow.addView(statusText);
         ll.addView(statusRow);
+        statusText.setOnClickListener(v -> runDiagnostics());
         setStatus(0xFFD32F2F, "Waiting for Shizuku — install & start Shizuku, then reopen.");
 
         log = new TextView(this);
@@ -261,6 +270,9 @@ public class MainActivity extends Activity {
     }
 
     private boolean shizukuHandled = false;
+    /** True when the Shizuku server binder is alive + permission granted — enough
+     *  for the newProcess shell path even if bindUserService keeps failing. */
+    private boolean shizukuReady = false;
 
     /** Called once the Shizuku binder is available. Drives permission -> bind.
      *  Guarded: both the sticky listener and the direct ping may fire it. */
@@ -281,6 +293,8 @@ public class MainActivity extends Activity {
 
         if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
             log("Shizuku permission already granted.");
+            shizukuReady = true;
+            ui.post(() -> applyBtn.setEnabled(true));
             bindService();
         } else {
             log("Requesting Shizuku permission…");
@@ -419,12 +433,21 @@ public class MainActivity extends Activity {
         }, "stage").start();
     }
 
+    /** Run a command as the Shizuku (shell) uid: persistent UserService when
+     *  bound, otherwise the one-shot newProcess path (for devices where the
+     *  server dies spawning a UserService). Same output contract. */
+    private String execShell(String cmd) throws android.os.RemoteException {
+        if (service != null) return service.exec(cmd);
+        return ShellRunner.exec(cmd);
+    }
+
     private void doApply() {
         try {
-            if (service == null) {
-                log("ERROR: Shizuku service not bound. Reopen the app.");
+            if (service == null && !shizukuReady) {
+                log("ERROR: Shizuku is not connected. Reopen the app.");
                 return;
             }
+            log("Shell path: " + (service != null ? "UserService" : "newProcess fallback"));
             File src = localPatch();
             log("\n— Applying —");
             if (src == null || !src.exists()) {
@@ -439,11 +462,11 @@ public class MainActivity extends Activity {
                 log("WARNING: size != expected " + EXPECTED_SIZE + " (continuing anyway).");
             }
 
-            service.exec("am force-stop jp.gree_ent.mushoku");
+            execShell("am force-stop jp.gree_ent.mushoku");
 
             // The asset-hash subfolder changes on some game updates, so resolve
             // the live bundle path(s) at apply time and patch every copy found.
-            String found = service.exec(
+            String found = execShell(
                     "for f in " + GAME_CACHE_GLOB + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
             java.util.List<String> dests = new java.util.ArrayList<>();
             for (String line : found.split("\n")) {
@@ -460,14 +483,14 @@ public class MainActivity extends Activity {
             boolean ok = false;
             for (String dest : dests) {
                 log("Copying to game cache:\n  " + dest);
-                String r = service.exec("cp '" + src.getAbsolutePath() + "' '" + dest + "' && echo CP_OK");
+                String r = execShell("cp '" + src.getAbsolutePath() + "' '" + dest + "' && echo CP_OK");
                 if (!r.contains("CP_OK")) {
                     log("COPY FAILED for " + dest + "\n" + r);
                     continue;
                 }
-                service.exec("chmod 0666 '" + dest + "' 2>/dev/null");
+                execShell("chmod 0666 '" + dest + "' 2>/dev/null");
 
-                String sz = service.exec("stat -c %s '" + dest + "' 2>/dev/null || wc -c < '" + dest + "'");
+                String sz = execShell("stat -c %s '" + dest + "' 2>/dev/null || wc -c < '" + dest + "'");
                 log("On-device size: " + sz.trim());
                 if (sz.contains(String.valueOf(len))) {
                     ok = true;
@@ -497,6 +520,27 @@ public class MainActivity extends Activity {
         } finally {
             ui.post(() -> applyBtn.setEnabled(true));
         }
+    }
+
+    /** Tap the status line: self-test BOTH shell paths + killer-setting hints. */
+    private void runDiagnostics() {
+        new Thread(() -> {
+            log("\n— Diagnostics —");
+            log("UserService bound: " + (service != null)
+                    + " | newProcess available: " + ShellRunner.available());
+            if (service != null) {
+                try {
+                    log("UserService id: " + service.exec("id").trim());
+                } catch (Throwable t) {
+                    log("UserService exec FAILED: " + t.getMessage());
+                }
+            }
+            log("newProcess id: " + ShellRunner.exec("id").trim());
+            log("phantom_procs setting: " + ShellRunner.exec(
+                    "settings get global settings_enable_monitor_phantom_procs").trim());
+            log("device: " + android.os.Build.MODEL + " | Android "
+                    + android.os.Build.VERSION.RELEASE);
+        }, "diag").start();
     }
 
     // ---------------- helpers: small files, md5 ----------------
@@ -576,9 +620,12 @@ public class MainActivity extends Activity {
     // ---------------- on-device auto-patch (beta) ----------------
 
     private void onAutoPatch() {
-        if (service == null) {
+        if (service == null && !shizukuReady) {
             log("ERROR: connect Shizuku first.");
             return;
+        }
+        if (service == null) {
+            log("UserService not bound — using newProcess fallback.");
         }
         autoBtn.setEnabled(false);
         new Thread(() -> {
@@ -596,10 +643,10 @@ public class MainActivity extends Activity {
 
     private void doAutoPatch() throws Exception {
         log("\n— Auto-patch (fully on-device) —");
-        service.exec("am force-stop " + GAME_PKG);
+        execShell("am force-stop " + GAME_PKG);
 
         // 1. live bundle path(s)
-        String found = service.exec("for f in " + GAME_CACHE_GLOB
+        String found = execShell("for f in " + GAME_CACHE_GLOB
                 + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
         java.util.List<String> dests = new java.util.ArrayList<>();
         for (String line : found.split("\n")) {
@@ -610,7 +657,7 @@ public class MainActivity extends Activity {
             throw new IllegalStateException("no language bundle found — run the game once first");
 
         // source = NEWEST bundle (an old asset-hash folder may linger post-update)
-        String srcQ = service.exec("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
+        String srcQ = execShell("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
                 .replace("exit=0", "").trim();
         String srcBundle = srcQ.startsWith("/sdcard/") ? srcQ.split("\n")[0] : dests.get(0);
         log("source bundle (newest): " + srcBundle);
@@ -621,19 +668,19 @@ public class MainActivity extends Activity {
         String q = dir.getAbsolutePath();
         File stockF = new File(dir, "stock_new.__data");
         File metaF = new File(dir, "global-metadata.dat");
-        String r1 = service.exec("cp '" + srcBundle + "' '" + q
+        String r1 = execShell("cp '" + srcBundle + "' '" + q
                 + "/stock_new.__data' && echo OK1");
         if (!r1.contains("OK1")) throw new IllegalStateException("cannot read bundle:\n" + r1);
-        String r2 = service.exec("cp '" + META_PATH + "' '" + q
+        String r2 = execShell("cp '" + META_PATH + "' '" + q
                 + "/global-metadata.dat' && echo OK2");
         if (!r2.contains("OK2")) {
             log("metadata not at the usual path, searching…");
-            String fr = service.exec("find /sdcard/Android/data/" + GAME_PKG
+            String fr = execShell("find /sdcard/Android/data/" + GAME_PKG
                     + "/files -name global-metadata.dat 2>/dev/null | head -1");
             String mp = fr.replace("exit=0", "").trim();
             if (!mp.startsWith("/"))
                 throw new IllegalStateException("global-metadata.dat not found on device");
-            r2 = service.exec("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
+            r2 = execShell("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
             if (!r2.contains("OK2"))
                 throw new IllegalStateException("cannot read metadata:\n" + r2);
         }
@@ -698,7 +745,7 @@ public class MainActivity extends Activity {
 
         // 7. write back over every live copy
         for (String dest : dests) {
-            String rr = service.exec("cp '" + outF.getAbsolutePath() + "' '" + dest
+            String rr = execShell("cp '" + outF.getAbsolutePath() + "' '" + dest
                     + "' && echo CP_OK; chmod 0666 '" + dest + "' 2>/dev/null");
             if (!rr.contains("CP_OK"))
                 throw new IllegalStateException("write failed for " + dest + "\n" + rr);
