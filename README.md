@@ -7,16 +7,20 @@ No root, no PC, no storage permission — it uses
 [Shizuku](https://shizuku.rikka.app/) (`bindUserService`, shell/ADB uid) to copy
 the patched language bundle (`__data`) over the game's UnityCache copy.
 
-## Features (v1.1)
+## Features (v2.0)
 
 - One-tap apply, status light, optional self-uninstall.
-- SAF file picker for the `__data` patch (or drop it manually into
-  `Android/data/com.mtpatch.enapply/files/__data`).
-- **Update-proof:** auto-discovers the live bundle path at apply time. The
-  game's asset-hash cache subfolder changes on some updates, and a mirrored
-  copy lives under `files/il2cpp/<m>/UnityCache/Shared` — the app globs both
-  roots and patches every live copy found (falls back to the known v1.0.5 path
-  with a warning).
+- **Download latest patch**: fetches `version.json` + `__data` from the rolling
+  `patch-latest` GitHub release, verifies size+md5. Manual SAF picker kept as fallback.
+- **Auto-patch after update (beta)**: fully on-device recovery after a game update —
+  the app extracts the AES keys from the game's own `global-metadata.dat`, decrypts
+  the new language bundle, overlays the downloaded translation cache (only brand-new
+  cells stay Japanese), and writes the rebuilt bundle back. No PC, no waiting for a
+  new patch build.
+- **Update-proof paths:** auto-discovers the live bundle path at apply time. The
+  game's asset-hash cache subfolder changes on some updates, and a mirrored copy
+  lives under `files/il2cpp/<m>/UnityCache/Shared` — the app globs both roots and
+  patches every live copy found (falls back to the known v1.0.5 path with a warning).
 
 ## Requirements
 
@@ -65,8 +69,7 @@ owners. Use at your own risk.
 
 ## Roadmap
 
-- Download-the-patch flow (Cloudflare Worker / GitHub Releases) so no manual
-  file copy is needed.
 - "New patch available" indicator on the status line.
-- Fully on-device auto-patch after game updates (decrypt + merge old
-  translations so only brand-new cells stay Japanese).
+- Signed release builds (currently debug-signed).
+- Server-side auto-build on game updates (GitHub Actions / watcher) so the
+  `patch-latest` tag is refreshed without human intervention.

@@ -5,6 +5,9 @@
          binder to our provider. Required (same as Mihon/MacroDroid declare). -->
     <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
 
+    <!-- Download the latest patch + translation cache from GitHub Releases. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- No storage permission needed: we read __data from our own app-specific
          external dir (getExternalFilesDir) and write via Shizuku (shell uid). -->
 

@@ -19,6 +19,10 @@ import android.widget.TextView;
 
 import java.io.File;
 
+import com.mtpatch.enapply.core.AutoPatcher;
+import com.mtpatch.enapply.core.JsonMap;
+import com.mtpatch.enapply.core.MasterCrypto;
+
 import rikka.shizuku.Shizuku;
 
 /**
@@ -41,6 +45,15 @@ public class MainActivity extends Activity {
                     + " /sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/*/UnityCache/Shared/*/*/__data";
 
     private static final long EXPECTED_SIZE = 1779698L;
+
+    private static final String GAME_PKG = "jp.gree_ent.mushoku";
+    private static final String RELEASE_BASE =
+            "https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/";
+    private static final String VERSION_URL = RELEASE_BASE + "version.json";
+    private static final String DATA_URL = RELEASE_BASE + "__data";
+    private static final String CACHE_URL = RELEASE_BASE + "translation_cache.json";
+    private static final String META_PATH =
+            "/sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/Metadata/global-metadata.dat";
     private static final int REQ_SHIZUKU = 1001;
     private static final int REQ_PICK_FILE = 1002;
     private static final String SHIZUKU_PKG = "moe.shizuku.privileged.api";
@@ -48,7 +61,7 @@ public class MainActivity extends Activity {
     private TextView log;
     private TextView statusText;
     private android.graphics.drawable.GradientDrawable statusDot;
-    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn;
+    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, downloadBtn, autoBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private IUserService service;
@@ -164,6 +177,16 @@ public class MainActivity extends Activity {
         pickBtn.setText("Choose __data file…");
         pickBtn.setOnClickListener(v -> openPicker());
         ll.addView(pickBtn);
+
+        downloadBtn = new Button(this);
+        downloadBtn.setText("Download latest patch");
+        downloadBtn.setOnClickListener(v -> onDownload());
+        ll.addView(downloadBtn);
+
+        autoBtn = new Button(this);
+        autoBtn.setText("Auto-patch after update (beta)");
+        autoBtn.setOnClickListener(v -> onAutoPatch());
+        ll.addView(autoBtn);
 
         applyBtn = new Button(this);
         applyBtn.setText("Apply English patch");
@@ -471,5 +494,209 @@ public class MainActivity extends Activity {
         } finally {
             ui.post(() -> applyBtn.setEnabled(true));
         }
+    }
+
+    // ---------------- helpers: small files, md5 ----------------
+
+    private File cacheFile() {
+        File dir = getExternalFilesDir(null);
+        return dir == null ? new File(getFilesDir(), "translation_cache.json")
+                : new File(dir, "translation_cache.json");
+    }
+
+    private File versionFile() {
+        File dir = getExternalFilesDir(null);
+        return dir == null ? new File(getFilesDir(), "version.json")
+                : new File(dir, "version.json");
+    }
+
+    private static String readSmall(File f) throws Exception {
+        return new String(java.nio.file.Files.readAllBytes(f.toPath()),
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static void writeSmall(File f, String s) throws Exception {
+        java.nio.file.Files.write(f.toPath(), s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    private static String md5Of(File f) throws Exception {
+        return MasterCrypto.md5Hex(java.nio.file.Files.readAllBytes(f.toPath()));
+    }
+
+    // ---------------- download latest patch (P1) ----------------
+
+    private void onDownload() {
+        downloadBtn.setEnabled(false);
+        new Thread(() -> {
+            try {
+                log("\n— Checking latest patch —");
+                String vj = Downloader.fetchString(VERSION_URL, this::log);
+                java.util.Map<String, String> v = JsonMap.parseFlat(vj);
+                writeSmall(versionFile(), vj);
+                long wantSize = Long.parseLong(v.getOrDefault("patch_size", "0"));
+                String wantMd5 = v.getOrDefault("patch_md5", "");
+                log("Latest: " + wantSize + " bytes, built " + v.getOrDefault("built_at", "?"));
+                File staged = stagedPatch();
+                if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
+                    log("You already have the latest patch — nothing to download.");
+                } else {
+                    log("Downloading patch…");
+                    Downloader.fetchToFile(DATA_URL, staged, this::log);
+                    String got = md5Of(staged);
+                    if (!wantMd5.equalsIgnoreCase(got)) {
+                        log("ERROR: md5 mismatch after download (" + got + ")");
+                        return;
+                    }
+                    if (wantSize > 0 && staged.length() != wantSize) {
+                        log("ERROR: size mismatch after download");
+                        return;
+                    }
+                    log("Patch downloaded & verified.");
+                }
+                try {
+                    Downloader.fetchToFile(CACHE_URL, cacheFile(), this::log);
+                    log("Translation cache refreshed.");
+                } catch (Throwable t) {
+                    log("(cache refresh failed, keeping old one: " + t.getMessage() + ")");
+                }
+                log("Done — tap \"Apply English patch\".");
+                ui.post(this::refreshStatus);
+            } catch (Throwable t) {
+                log("DOWNLOAD ERROR: " + t.getMessage()
+                        + "\nCheck internet, or use \"Choose __data file…\" instead.");
+            } finally {
+                ui.post(() -> downloadBtn.setEnabled(true));
+            }
+        }, "download").start();
+    }
+
+    // ---------------- on-device auto-patch (beta) ----------------
+
+    private void onAutoPatch() {
+        if (service == null) {
+            log("ERROR: connect Shizuku first.");
+            return;
+        }
+        autoBtn.setEnabled(false);
+        new Thread(() -> {
+            try {
+                doAutoPatch();
+            } catch (Throwable t) {
+                log("AUTO-PATCH FAILED: " + t.getMessage()
+                        + "\nFallback: \"Download latest patch\" works once we publish a build"
+                        + " for this game version.");
+            } finally {
+                ui.post(() -> autoBtn.setEnabled(true));
+            }
+        }, "autopatch").start();
+    }
+
+    private void doAutoPatch() throws Exception {
+        log("\n— Auto-patch (fully on-device) —");
+        service.exec("am force-stop " + GAME_PKG);
+
+        // 1. live bundle path(s)
+        String found = service.exec("for f in " + GAME_CACHE_GLOB
+                + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
+        java.util.List<String> dests = new java.util.ArrayList<>();
+        for (String line : found.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("FOUND:")) dests.add(line.substring(6));
+        }
+        if (dests.isEmpty())
+            throw new IllegalStateException("no language bundle found — run the game once first");
+        log("bundle: " + dests.get(0));
+
+        // 2. stage bundle + global-metadata into our own dir (shell uid can read them)
+        File dir = getExternalFilesDir(null);
+        if (dir == null) throw new IllegalStateException("no external files dir");
+        String q = dir.getAbsolutePath();
+        File stockF = new File(dir, "stock_new.__data");
+        File metaF = new File(dir, "global-metadata.dat");
+        String r1 = service.exec("cp '" + dests.get(0) + "' '" + q
+                + "/stock_new.__data' && echo OK1");
+        if (!r1.contains("OK1")) throw new IllegalStateException("cannot read bundle:\n" + r1);
+        String r2 = service.exec("cp '" + META_PATH + "' '" + q
+                + "/global-metadata.dat' && echo OK2");
+        if (!r2.contains("OK2")) {
+            log("metadata not at the usual path, searching…");
+            String fr = service.exec("find /sdcard/Android/data/" + GAME_PKG
+                    + "/files -name global-metadata.dat 2>/dev/null | head -1");
+            String mp = fr.replace("exit=0", "").trim();
+            if (!mp.startsWith("/"))
+                throw new IllegalStateException("global-metadata.dat not found on device");
+            r2 = service.exec("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
+            if (!r2.contains("OK2"))
+                throw new IllegalStateException("cannot read metadata:\n" + r2);
+        }
+
+        // 3. AES keys from the game's own metadata (offsets from version.json or defaults)
+        int keyOff = 0xBCEA58, ivOff = 0xBD6228;
+        try {
+            if (versionFile().exists()) {
+                java.util.Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
+                if (v.containsKey("meta_key_off")) keyOff = Long.decode(v.get("meta_key_off")).intValue();
+                if (v.containsKey("meta_iv_off")) ivOff = Long.decode(v.get("meta_iv_off")).intValue();
+            }
+        } catch (Throwable ignored) {}
+        byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
+        byte[][] keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
+
+        // 4. translation cache (download once, then reuse)
+        if (!cacheFile().exists()) {
+            log("downloading translation cache (one-time)…");
+            Downloader.fetchToFile(CACHE_URL, cacheFile(), this::log);
+        }
+        java.util.Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile()));
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> cacheRaw = (java.util.Map<String, Object>) pl.get("cache");
+        java.util.Map<String, String> cache = new java.util.LinkedHashMap<>(cacheRaw.size());
+        for (java.util.Map.Entry<String, Object> e : cacheRaw.entrySet())
+            cache.put(e.getKey(), String.valueOf(e.getValue()));
+        java.util.Map<String, java.util.Map<String, String>> hand = new java.util.LinkedHashMap<>();
+        Object handObj = pl.get("hand");
+        if (handObj instanceof java.util.Map) {
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> hm = (java.util.Map<String, Object>) handObj;
+            for (java.util.Map.Entry<String, Object> e : hm.entrySet()) {
+                @SuppressWarnings("unchecked")
+                java.util.Map<String, Object> inner = (java.util.Map<String, Object>) e.getValue();
+                java.util.Map<String, String> dst = new java.util.LinkedHashMap<>();
+                for (java.util.Map.Entry<String, Object> e2 : inner.entrySet())
+                    dst.put(e2.getKey(), String.valueOf(e2.getValue()));
+                hand.put(e.getKey(), dst);
+            }
+        }
+
+        // 5. known table names (bundled asset)
+        java.util.List<String> names = new java.util.ArrayList<>();
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(
+                getAssets().open("tables.txt")))) {
+            String ln;
+            while ((ln = br.readLine()) != null) {
+                ln = ln.trim();
+                if (!ln.isEmpty()) names.add(ln);
+            }
+        }
+
+        // 6. patch fully on-device
+        byte[] stock = java.nio.file.Files.readAllBytes(stockF.toPath());
+        AutoPatcher.Result res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, this::log);
+        File outF = new File(dir, "patched.__data");
+        java.nio.file.Files.write(outF.toPath(), res.data);
+        log("patched " + res.patched + "/" + res.tablesFound + " tables; "
+                + res.leftJaCells + " cells left Japanese (new content); "
+                + res.data.length + " bytes");
+
+        // 7. write back over every live copy
+        for (String dest : dests) {
+            String rr = service.exec("cp '" + outF.getAbsolutePath() + "' '" + dest
+                    + "' && chmod 0666 '" + dest + "' && echo CP_OK");
+            if (!rr.contains("CP_OK"))
+                throw new IllegalStateException("write failed for " + dest + "\n" + rr);
+            log("written: " + dest);
+        }
+        log("\nSUCCESS — auto-patched on device. Launch the game!");
+        setStatus(0xFF388E3C, "Auto-patch installed! Launch the game.");
     }
 }
