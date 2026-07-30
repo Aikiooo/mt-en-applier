@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.mtpatch.enapply'
+    compileSdk 37
+
+    defaultConfig {
+        applicationId "com.mtpatch.enapply"
+        minSdk 26
+        targetSdk 34
+        versionCode 2
+        versionName "1.1"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    buildFeatures {
+        aidl true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// All Shizuku API sources are vendored under src/main/java (rikka.shizuku.*,
+// moe.shizuku.api) + src/main/aidl (moe.shizuku.server).
+dependencies {
+    implementation 'androidx.annotation:annotation:1.9.1'
+    // Required so the Shizuku API's hidden-API reflection works on Android 9+.
+    implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'
+}

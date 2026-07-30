@@ -1,0 +1,72 @@
+# MT-EN Applier
+
+One-tap installer for the **unofficial English patch** for the mobile game
+*Mushoku Tensei: Chronicle of Echoes* (`jp.gree_ent.mushoku`).
+
+No root, no PC, no storage permission — it uses
+[Shizuku](https://shizuku.rikka.app/) (`bindUserService`, shell/ADB uid) to copy
+the patched language bundle (`__data`) over the game's UnityCache copy.
+
+## Features (v1.1)
+
+- One-tap apply, status light, optional self-uninstall.
+- SAF file picker for the `__data` patch (or drop it manually into
+  `Android/data/com.mtpatch.enapply/files/__data`).
+- **Update-proof:** auto-discovers the live bundle path at apply time. The
+  game's asset-hash cache subfolder changes on some updates, and a mirrored
+  copy lives under `files/il2cpp/<m>/UnityCache/Shared` — the app globs both
+  roots and patches every live copy found (falls back to the known v1.0.5 path
+  with a warning).
+
+## Requirements
+
+- Android 11+ (minSdk 26; tested on Android 13–16).
+- [Shizuku](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api)
+  running (start via wireless debugging; survives until reboot).
+
+## Install
+
+1. Download **`MT-EN-Applier.apk`** and **`__data`** from the
+   [Releases](../../releases) page (`INSTALL.md` there is the full guide).
+2. Install the game, open it once to the title screen so it downloads its
+   data, then fully close it.
+3. Install the APK, open it, grant the Shizuku permission when prompted.
+4. Tap **Choose __data file…** → pick the downloaded `__data` →
+   **Apply English patch** → launch the game.
+5. After a game update, just re-open the app and apply again (v1.1 finds the
+   new file location by itself).
+
+## Build from source
+
+```bat
+gradlew.bat assembleDebug
+:: output: app\build\outputs\apk\debug\app-debug.apk
+```
+
+Android Studio project — AGP 9.3.0 / Gradle 9.5.1, Java 17, `compileSdk 37`.
+The Shizuku API client (`rikka.shizuku.*`, `moe.shizuku.*` AIDL) is vendored
+(MIT, © RikkaApps) and `org.lsposed.hiddenapibypass` is used for hidden-API
+access on Android 9+.
+
+## How it works
+
+`MainActivity` binds a Shizuku `UserService` (`UserService.exec`), force-stops
+the game, resolves the live `__data` path(s) under
+`/sdcard/Android/data/jp.gree_ent.mushoku/files/…/UnityCache/Shared/`,
+`cp`s the staged patch over each copy, `chmod 0666`, and verifies the
+on-device size. The APK itself contains no game data and no encryption keys.
+
+## Legal / disclaimer
+
+Unofficial fan project — not affiliated with GREE, Beaglee, or the rights
+holders. The companion `__data` patch (Releases) is a fan-made English
+translation layered onto the game's own data; game text © its respective
+owners. Use at your own risk.
+
+## Roadmap
+
+- Download-the-patch flow (Cloudflare Worker / GitHub Releases) so no manual
+  file copy is needed.
+- "New patch available" indicator on the status line.
+- Fully on-device auto-patch after game updates (decrypt + merge old
+  translations so only brand-new cells stay Japanese).
