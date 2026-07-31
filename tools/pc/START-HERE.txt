@@ -7,6 +7,27 @@ This makes the PC game run in English. You do NOT need to know
 anything about PowerShell or command lines. Just follow the 3 steps.
 
 
+  !! READ THIS FIRST - protect your account (not optional) !!
+  ------------------------------------------------------------
+  The PC version logs you in through DMM and has NO way to recover
+  an account from inside the game. That's true with or without this
+  patch - the patch does not touch your account. But it means: if
+  you ever reinstall, move PCs, or anything goes wrong, an account
+  that isn't linked is gone for good.
+
+  So BEFORE you play much, link your account. On this game linking
+  can only be done from the ANDROID version:
+      - install the Android app, log into the same account, and
+        bind it to a Google account (in the game's settings),
+    OR
+      - only use this PC patch on an account you've just started,
+        so there's nothing to lose.
+
+  You had no problem? Good - most people don't. This is just cheap
+  insurance, exactly the same advice as "bind your gacha account"
+  for any game.
+
+
   STEP 0 - one time only, before anything else
   ------------------------------------------------------------
   Install the game through DMM GAME PLAYER and launch it ONCE,
