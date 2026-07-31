@@ -1,0 +1,74 @@
+===============================================================
+  Mushoku Tensei: Chronicle of Echoes  -  PC ENGLISH PATCH
+  (DMM GAME PLAYER version)
+===============================================================
+
+This makes the PC game run in English. You do NOT need to know
+anything about PowerShell or command lines. Just follow the 3 steps.
+
+
+  STEP 0 - one time only, before anything else
+  ------------------------------------------------------------
+  Install the game through DMM GAME PLAYER and launch it ONCE,
+  all the way to the title screen. Then close the game.
+  (This makes the game download its data files. The patch needs
+  those files to exist.)
+
+
+  STEP 1 - install the patch (one time only)
+  ------------------------------------------------------------
+  Double-click:
+
+        Install-EnPatch.bat
+
+  A window opens and does everything by itself. When it says
+  "Install complete", press any key to close it.
+
+  (You only do this again if the game gets an update.)
+
+
+  STEP 2 - play (every time)
+  ------------------------------------------------------------
+  Double-click:
+
+        Play-En.bat
+
+  Then click PLAY in DMM GAME PLAYER. Keep the black window OPEN
+  while you play - it quietly puts the English files in and puts
+  the originals back when you quit. When you're done playing,
+  press any key to close it.
+
+  That's it. The game is in English.
+
+
+===============================================================
+  TROUBLESHOOTING
+===============================================================
+
+* "Could not find the game automatically"
+    The installer couldn't guess where the game is installed.
+    Right-click Install-EnPatch.ps1 -> "Run with PowerShell" won't
+    help here; instead open a terminal in this folder and run:
+        powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -GameDir "D:\Games\mushoku_coe_cl"
+    (use the real folder that has mushoku_coe_cl.exe in it)
+
+* Some lines are still Japanese
+    Go back to the title screen and re-enter the screen you were on.
+    Some text only loads the second time. (Same quirk as Android.)
+
+* Windows SmartScreen / antivirus warns about the .bat
+    That's normal for any downloaded script. Click "More info" ->
+    "Run anyway". The scripts only copy game files around; the
+    source is right here for anyone to read.
+
+* DMM "repaired" the game and English is gone
+    You launched the game from DMM directly instead of through
+    Play-En.bat. Always start with Play-En.bat.
+
+* Still stuck?
+    Open README.md in this folder (full guide), or open an issue:
+    https://github.com/Aikiooo/mt-en-applier/issues
+
+
+Fan project, not affiliated with GREE / Beaglee. Game text (c) its
+owners. Use at your own risk.

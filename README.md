@@ -6,8 +6,13 @@ translation, every platform. Pick yours:
 | Platform | Method | Guide |
 |----------|--------|-------|
 | **Android phone** (no root) | Shizuku app | this page (below) |
-| **Windows PC (DMM)** | PowerShell scripts | [`tools/pc/README.md`](tools/pc/README.md) |
+| **Windows PC (DMM)** | Ready-to-use zip — download, double-click | [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) · [`tools/pc/README.md`](tools/pc/README.md) |
 | **Android emulator / rooted / GPG-PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
+
+PC users: **no repo clone, no terminal** — grab the zip from the
+[Releases](../../releases) tab, extract it, double-click `Install-EnPatch.bat`
+once, then `Play-En.bat` every time you play. `START-HERE.txt` in the zip is
+the whole guide in plain language.
 
 All three pull the same translation from the rolling
 [`patch-latest`](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest)

@@ -17,10 +17,10 @@
 
 .EXAMPLE
   # stage only (review the output first)
-  powershell -File build\Publish-PcPatch.ps1
+  powershell -File maintainer\Publish-PcPatch.ps1
 
   # stage + upload to patch-latest
-  powershell -File build\Publish-PcPatch.ps1 -Publish
+  powershell -File maintainer\Publish-PcPatch.ps1 -Publish
 #>
 param(
     [string]$SourceDir = 'D:\grok\Mushoku Tensei\pc_client',
@@ -78,5 +78,5 @@ if ($Publish) {
 } else {
     Write-Host ''
     Write-Host 'Review the staged files, then publish with:'
-    Write-Host "  powershell -File build\Publish-PcPatch.ps1 -Publish"
+    Write-Host "  powershell -File maintainer\Publish-PcPatch.ps1 -Publish"
 }

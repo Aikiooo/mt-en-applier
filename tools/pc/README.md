@@ -10,7 +10,20 @@ release.
 > © its owners. Use at your own risk. Online games can change their integrity
 > checks at any time; if a game update breaks this, re-run the installer.
 
-## TL;DR
+## TL;DR — just make it English
+
+**You don't need this repo or any command lines.** Grab the ready-to-use zip:
+
+1. **Download** the zip from the
+   [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases)
+   and extract it anywhere.
+2. Double-click **`Install-EnPatch.bat`** — once. It does everything.
+3. Double-click **`Play-En.bat`** every time you play, then click **Play** in
+   DMM GAME PLAYER. Leave the window open while you play.
+
+Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
+
+### Rather run it from a terminal / from this repo?
 
 ```powershell
 # once:
@@ -106,8 +119,10 @@ Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then play via
 
 | File | Purpose |
 |------|---------|
+| `Install-EnPatch.bat` | Double-click installer wrapper (runs the `.ps1`). **Start here.** |
 | `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. |
+| `Play-En.bat` | Double-click play wrapper — run this every time, then click Play in DMM. |
 | `Play-En.ps1` | Launch wrapper: stock for the DMM check, EN swap at spawn, restore on exit. |
-| `MT.EnPatch.psm1` | Shared functions (cache seeding, download/verify, game detection). |
-| `config.ps1` | Shared constants (release URL, cache guid/hash, paths). |
-| `maintainer/` | Maintainer-side builder that produces the release artifacts (PC bundles + `version.json`). |
+| `MT.EnPatch.psm1` | Shared constants + functions (cache seeding, download/verify, game detection). |
+| `START-HERE.txt` | The 3-step plain-language guide for non-technical users. |
+| `maintainer/` | Maintainer-side builders that produce the release artifacts (PC bundles + `version.json`, and this user zip). |

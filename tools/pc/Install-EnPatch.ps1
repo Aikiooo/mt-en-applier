@@ -90,6 +90,11 @@ if (-not $res.SizeOk) {
 }
 
 Write-Host ''
-Write-Host 'Install complete. To play in English, run:'
-Write-Host '  powershell -ExecutionPolicy Bypass -File Play-En.ps1'
-Write-Host '(Play-En.ps1 keeps DMM''s file check happy and swaps the EN patch in at boot.)'
+Write-Host 'Install complete. To play in English:'
+if (Test-Path -LiteralPath (Join-Path $here 'Play-En.bat')) {
+    Write-Host '  double-click Play-En.bat'
+    Write-Host '(from a terminal instead:  powershell -ExecutionPolicy Bypass -File Play-En.ps1)'
+} else {
+    Write-Host '  powershell -ExecutionPolicy Bypass -File Play-En.ps1'
+}
+Write-Host '(Play-En keeps DMM''s file check happy and swaps the EN patch in at boot.)'
