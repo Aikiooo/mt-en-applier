@@ -56,6 +56,25 @@ function Get-LangCacheDir {
     return (Join-Path $pub (Join-Path $script:LangBundleGuid $script:LangBundleHash))
 }
 
+# Read the game's install path from DMM GAME PLAYER's own config, which records
+# every installed title: %APPDATA%\dmmgameplayer5\dmmgame.cnf ->
+#   { "contents": [ { "productId": "mushoku_coe_cl", "detail": { "path": "..." } } ] }
+# This is the authoritative source and works no matter where DMM put the game.
+function Get-GameDirFromDmmConfig {
+    $cnf = Join-Path $env:APPDATA 'dmmgameplayer5\dmmgame.cnf'
+    if (-not (Test-Path -LiteralPath $cnf)) { return $null }
+    try {
+        $cfg = Get-Content -LiteralPath $cnf -Raw | ConvertFrom-Json
+        foreach ($c in @($cfg.contents)) {
+            if ($c.productId -ne $script:GameProcessName) { continue }
+            $p = $null
+            if ($c.detail -and $c.detail.PSObject.Properties['path']) { $p = $c.detail.path }
+            if ($p -and (Test-Path -LiteralPath (Join-Path $p $script:GameExeName))) { return $p }
+        }
+    } catch { }  # malformed/locked config -> fall through to other detectors
+    return $null
+}
+
 # Locate the game install root (the folder that contains mushoku_coe_cl.exe).
 function Get-GameDir {
     param([string]$Override)
@@ -63,13 +82,18 @@ function Get-GameDir {
         if (Test-Path (Join-Path $Override $script:GameExeName)) { return $Override }
         throw "Game exe not found under -GameDir '$Override'."
     }
+    # 1) DMM's own config (authoritative, any install location).
+    $fromCfg = Get-GameDirFromDmmConfig
+    if ($fromCfg) { return $fromCfg }
+    # 2) A running game process.
     $proc = Get-Process -Name $script:GameProcessName -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($proc -and $proc.Path) { return (Split-Path $proc.Path -Parent) }
-    $roots = @('D:\Games','C:\Games','D:\','C:\') | Where-Object { Test-Path $_ }
-    foreach ($r in $roots) {
-        $hit = Get-ChildItem -LiteralPath $r -Directory -ErrorAction SilentlyContinue |
-               Where-Object { Test-Path (Join-Path $_.FullName $script:GameExeName) } | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
+    # 3) Last resort: glob fixed drives (depth-limited) for the exe. Uses cmd's
+    #    fast built-in dir scan; silent on access-denied/unready drives.
+    $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Za-z]:\\$' }
+    foreach ($d in $drives) {
+        $hit = cmd /c "dir /b /s /a:-d `"$($d.Root)$($script:GameExeName)`" 2>nul" | Select-Object -First 1
+        if ($hit) { return (Split-Path $hit -Parent) }
     }
     return $null
 }
@@ -136,7 +160,7 @@ function Install-LanguageCache {
     }
 }
 
-Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-GameDir, Get-PatchArtifacts, Install-LanguageCache `
+Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-GameDir, Get-GameDirFromDmmConfig, Get-PatchArtifacts, Install-LanguageCache `
                     -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir
