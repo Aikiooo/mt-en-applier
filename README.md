@@ -1,5 +1,22 @@
 # MT-EN Applier
 
+Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes* — one
+translation, every platform. Pick yours:
+
+| Platform | Method | Guide |
+|----------|--------|-------|
+| **Android phone** (no root) | Shizuku app | this page (below) |
+| **Windows PC (DMM)** | PowerShell scripts | [`tools/pc/README.md`](tools/pc/README.md) |
+| **Android emulator / rooted / GPG-PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
+
+All three pull the same translation from the rolling
+[`patch-latest`](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest)
+release.
+
+---
+
+## Android (Shizuku app)
+
 One-tap installer for the **unofficial English patch** for the mobile game
 *Mushoku Tensei: Chronicle of Echoes* (`jp.gree_ent.mushoku`).
 
@@ -39,6 +56,11 @@ the patched language bundle (`__data`) over the game's UnityCache copy.
    **Apply English patch** → launch the game.
 5. After a game update, just re-open the app and apply again (v1.1 finds the
    new file location by itself).
+
+> **Load the game twice for full translation.** Some screens fetch their text on
+> first load and cache it, so a few parts can stay Japanese on the very first
+> run. If that happens, **go back to the title menu and re-enter** — the second
+> load renders fully in English. (The same applies to the PC method.)
 
 ## Build from source
 
