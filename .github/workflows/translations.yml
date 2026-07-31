@@ -1,0 +1,30 @@
+name: Validate translations
+
+on:
+  pull_request:
+    paths:
+      - 'translations/**'
+  push:
+    branches: [main]
+    paths:
+      - 'translations/**'
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild cache from sources
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Out "$env:TEMP/translation_cache.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Compare against released cache (semantic)
+        shell: pwsh
+        run: |
+          $baseline = "$env:TEMP/tc_baseline.json"
+          Invoke-WebRequest -Uri "https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/translation_cache.json" -OutFile $baseline
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Out "$env:TEMP/translation_cache.json" -Baseline $baseline
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
