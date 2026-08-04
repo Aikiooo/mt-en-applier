@@ -50,10 +50,18 @@ function Get-Md5 {
 }
 
 # Resolve the full language-bundle cache dir (…\GREE Entertainment_*\<guid>\<hash>).
+# The asset-hash subfolder changes on some updates, so prefer the NEWEST hash
+# folder the game has actually written (that is the one the catalog pins);
+# fall back to the known-current $script:LangBundleHash only when no folder
+# exists yet (fresh install: the installer creates it before the game runs).
 function Get-LangCacheDir {
     $pub = Get-UnityCachePublisherDir
     if (-not $pub) { return $null }
-    return (Join-Path $pub (Join-Path $script:LangBundleGuid $script:LangBundleHash))
+    $guidDir = Join-Path $pub $script:LangBundleGuid
+    $live = Get-ChildItem -LiteralPath $guidDir -Directory -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($live) { return $live.FullName }
+    return (Join-Path $guidDir $script:LangBundleHash)
 }
 
 # Read the game's install path from DMM GAME PLAYER's own config, which records
