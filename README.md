@@ -3,6 +3,10 @@
 Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes* — one
 translation, every platform. Pick yours:
 
+> **New here?** The plain-language walkthrough lives at
+> **https://www.mtcoe.com/#/en-patch** — pick your platform, follow the
+> pictures, grab the download. No GitHub account needed.
+
 | Platform | Method | Guide |
 |----------|--------|-------|
 | **Android phone** (no root) | Shizuku app | this page (below) |

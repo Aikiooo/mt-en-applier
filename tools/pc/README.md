@@ -15,6 +15,7 @@ Unofficial English patch for the **Windows / DMM** release of *Mushoku Tensei: C
 3. Double-click **`Play-En.bat`** every time you play, then click **Play** in DMM GAME PLAYER. Leave the window open while you play.
 
 Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
+(Or read the same guide in your browser: https://www.mtcoe.com/#/en-patch.)
 
 ### Rather run it from a terminal / from this repo?
 
