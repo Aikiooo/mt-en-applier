@@ -1,21 +1,24 @@
 # MT-EN Applier
 
-Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes* — one
-translation, every platform. Pick yours:
+Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes*.
 
-> **New here?** The plain-language walkthrough lives at
-> **https://mtcoe.com/#/en-patch** — pick your platform, follow the
-> pictures, grab the download. No GitHub account needed.
+<p align="center"><strong>New here?</strong> The plain-language walkthrough covers every platform with pictures:</p>
 
-> **Last patch:** 2026-08-13 (v5) — see [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
+<p align="center">
+  <a href="https://mtcoe.com/#/en-patch"><img src="https://img.shields.io/badge/%F0%9F%93%96%20Open%20the%20walkthrough-e0b44c?style=flat" alt="📖 Open the walkthrough" width="235"></a>
+</p>
+
+One translation, every platform. Pick yours:
+
+> **Last patch:** 2026-08-13 (v5). See [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
 
 | Platform | Method | Guide |
 |----------|--------|-------|
 | **Android phone** (no root) | Shizuku app | this page (below) |
-| **Windows PC (DMM)** | Ready-to-use zip — download, double-click | [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) · [`tools/pc/README.md`](tools/pc/README.md) |
+| **Windows PC (DMM)** | Ready-to-use zip (download, double-click) | [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) · [`tools/pc/README.md`](tools/pc/README.md) |
 | **Android emulator / rooted / GPG-PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
 
-PC users: **no repo clone, no terminal** — grab the zip from the
+PC users: **no repo clone, no terminal**. Grab the zip from the
 [Releases](../../releases) tab, extract it, double-click `Install-EnPatch.bat`
 once, then `Play-En.bat` every time you play. `START-HERE.txt` in the zip is
 the whole guide in plain language.
