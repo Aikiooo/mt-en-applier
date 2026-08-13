@@ -7,7 +7,7 @@ translation, every platform. Pick yours:
 > **https://mtcoe.com/#/en-patch** — pick your platform, follow the
 > pictures, grab the download. No GitHub account needed.
 
-> **Last patch:** 2026-08-13 (v4) — see [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
+> **Last patch:** 2026-08-13 (v5) — see [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
 
 | Platform | Method | Guide |
 |----------|--------|-------|

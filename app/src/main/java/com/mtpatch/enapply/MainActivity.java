@@ -47,7 +47,7 @@ public class MainActivity extends Activity {
                     + " /sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/*/UnityCache/Shared/"
                     + "cad73e991807559422ab03e01424a9d3/*/__data";
 
-    private static final long EXPECTED_SIZE = 1797824L;
+    private static final long EXPECTED_SIZE = 1797998L;
 
     private static final String GAME_PKG = "jp.gree_ent.mushoku";
     private static final String RELEASE_BASE =
