@@ -49,10 +49,25 @@ function Get-Md5 {
     finally { $fs.Close(); $md5.Dispose() }
 }
 
+# Live asset-hash for the language-bundle cache folder: read from version.json's
+# pc block when available (Get-PatchArtifacts writes it), else the baked constant.
+# Keeps fresh-install cache seeding correct across game updates without a psm1 bump.
+function Get-LangBundleHash {
+    try {
+        $vp = Join-Path $script:PatchDataDir $script:VersionFile
+        if (Test-Path -LiteralPath $vp) {
+            $v = Get-Content -LiteralPath $vp -Raw | ConvertFrom-Json
+            $h = $v.pc.language_ja_en.hash
+            if ($h -and $h -match '^[0-9a-f]{32}$') { return $h }
+        }
+    } catch { }
+    return $script:LangBundleHash
+}
+
 # Resolve the full language-bundle cache dir (…\GREE Entertainment_*\<guid>\<hash>).
 # The asset-hash subfolder changes on some updates, so prefer the NEWEST hash
 # folder the game has actually written (that is the one the catalog pins);
-# fall back to the known-current $script:LangBundleHash only when no folder
+# fall back to the live hash (version.json or constant) only when no folder
 # exists yet (fresh install: the installer creates it before the game runs).
 function Get-LangCacheDir {
     $pub = Get-UnityCachePublisherDir
@@ -61,7 +76,7 @@ function Get-LangCacheDir {
     $live = Get-ChildItem -LiteralPath $guidDir -Directory -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($live) { return $live.FullName }
-    return (Join-Path $guidDir $script:LangBundleHash)
+    return (Join-Path $guidDir (Get-LangBundleHash))
 }
 
 # Read the game's install path from DMM GAME PLAYER's own config, which records
@@ -156,7 +171,7 @@ function Install-LanguageCache {
     if (-not $cacheDir) {
         $pub = Get-UnityCachePublisherDir
         if (-not $pub) { throw 'Unity cache publisher folder not found. Launch the game once to the title screen, then retry.' }
-        $cacheDir = Join-Path $pub (Join-Path $script:LangBundleGuid $script:LangBundleHash)
+        $cacheDir = Join-Path $pub (Join-Path $script:LangBundleGuid (Get-LangBundleHash))
         New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
     }
 
@@ -173,7 +188,7 @@ function Install-LanguageCache {
     }
 }
 
-Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-GameDir, Get-GameDirFromDmmConfig, Get-PatchArtifacts, Install-LanguageCache `
+Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-PatchArtifacts, Install-LanguageCache `
                     -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir

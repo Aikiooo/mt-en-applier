@@ -26,6 +26,10 @@ param(
     [string]$SourceDir = 'D:\grok\Mushoku Tensei\pc_client',
     [string]$LangBundleName   = 'language-ja_en_exact1797998.bundle',
     [string]$InappPatchName   = 'inapp_assets_all_en.bundle',
+    # Unity cache asset-hash subfolder for the language bundle (the folder the
+    # game looks in: …\GREE Entertainment_*\<guid>\<hash>\__data). MUST match the
+    # bundle's current asset hash or fresh PC installs seed the wrong folder.
+    [string]$LangBundleHash = '133414c00d6dd88d834135f255cf7efc',
     [string]$OutDir = (Join-Path $env:TEMP 'mt-pc-patch-release'),
     [switch]$Publish,
     [string]$Repo = 'Aikiooo/mt-en-applier',
@@ -48,10 +52,15 @@ $inappDst = Join-Path $OutDir $InappFileName
 Copy-Item -LiteralPath $langSrc  -Destination $langDst  -Force
 Copy-Item -LiteralPath $inappSrc -Destination $inappDst -Force
 
+if ($LangBundleHash -notmatch '^[0-9a-f]{32}$') {
+    Write-Host "ERROR: -LangBundleHash must be the 32-hex asset hash, got '$LangBundleHash'"; exit 1
+}
+
 $pcBlock = [ordered]@{
     language_ja_en = [ordered]@{
         size = (Get-Item $langDst).Length
         md5  = Get-Md5 $langDst
+        hash = $LangBundleHash
     }
     inapp_assets_all_en = [ordered]@{
         size = (Get-Item $inappDst).Length
