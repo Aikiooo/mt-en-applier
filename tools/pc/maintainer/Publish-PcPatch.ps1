@@ -24,7 +24,7 @@
 #>
 param(
     [string]$SourceDir = 'D:\grok\Mushoku Tensei\pc_client',
-    [string]$LangBundleName   = 'language-ja_en_exact1793293.bundle',
+    [string]$LangBundleName   = 'language-ja_en_exact1797824.bundle',
     [string]$InappPatchName   = 'inapp_assets_all_en.bundle',
     [string]$OutDir = (Join-Path $env:TEMP 'mt-pc-patch-release'),
     [switch]$Publish,
