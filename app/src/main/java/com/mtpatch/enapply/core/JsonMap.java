@@ -34,7 +34,8 @@ public final class JsonMap {
     private void ws() {
         while (p < s.length()) {
             char c = s.charAt(p);
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') p++;
+            // \uFEFF: tolerate a UTF-8 BOM at the start of a downloaded file.
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\uFEFF') p++;
             else break;
         }
     }

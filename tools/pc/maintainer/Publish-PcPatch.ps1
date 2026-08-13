@@ -64,7 +64,11 @@ $versionPath = Join-Path $OutDir $VersionFile
 Invoke-WebRequest -UseBasicParsing -Uri "$($ReleaseBase)/$($VersionFile)" -OutFile $versionPath
 $version = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
 $version | Add-Member -NotePropertyName pc -NotePropertyValue $pcBlock -Force
-$version | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $versionPath -Encoding utf8
+# Write BOM-free UTF-8: Set-Content -Encoding utf8 adds a BOM on Windows
+# PowerShell 5.1, which breaks the Android app's minimal JSON parser.
+[System.IO.File]::WriteAllText($versionPath,
+    ($version | ConvertTo-Json -Depth 6),
+    (New-Object System.Text.UTF8Encoding($false)))
 
 Write-Host "staged in $OutDir :"
 Get-ChildItem -LiteralPath $OutDir | ForEach-Object { Write-Host ("  {0}  {1} B" -f $_.Name, $_.Length) }
