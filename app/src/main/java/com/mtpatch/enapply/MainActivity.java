@@ -47,7 +47,9 @@ public class MainActivity extends Activity {
                     + " /sdcard/Android/data/jp.gree_ent.mushoku/files/il2cpp/*/UnityCache/Shared/"
                     + "cad73e991807559422ab03e01424a9d3/*/__data";
 
-    private static final long EXPECTED_SIZE = 1797998L;
+    /** Fallback only: the live patch_size comes from version.json (see
+     *  expectedPatchSize()), so size changes never require an app update. */
+    private static final long DEFAULT_EXPECTED_SIZE = 1797998L;
 
     private static final String GAME_PKG = "jp.gree_ent.mushoku";
     private static final String RELEASE_BASE =
@@ -443,8 +445,9 @@ public class MainActivity extends Activity {
                 long size = total;
                 log("File staged (" + size + " bytes).");
                 refreshStatus();
-                if (size != EXPECTED_SIZE) {
-                    log("WARNING: size != expected " + EXPECTED_SIZE + ". Make sure it's the right file.");
+                long want = expectedPatchSize();
+                if (size != want) {
+                    log("WARNING: size != expected " + want + ". Make sure it's the right file.");
                 } else if (service != null) {
                     log("Ready — tap \"Apply English patch\".");
                 } else {
@@ -482,8 +485,9 @@ public class MainActivity extends Activity {
             }
             long len = src.length();
             log("Local __data size: " + len);
-            if (len != EXPECTED_SIZE) {
-                log("WARNING: size != expected " + EXPECTED_SIZE + " (continuing anyway).");
+            long want = expectedPatchSize();
+            if (len != want) {
+                log("WARNING: size != expected " + want + " (continuing anyway).");
             }
 
             execShell("am force-stop jp.gree_ent.mushoku");
@@ -615,6 +619,20 @@ public class MainActivity extends Activity {
         File dir = getExternalFilesDir(null);
         return dir == null ? new File(getFilesDir(), "version.json")
                 : new File(dir, "version.json");
+    }
+
+    /** Expected patch size: the live patch_size from the saved version.json when
+     *  available, else the baked default. Keeps the "size != expected" warnings
+     *  correct across game updates without shipping a new APK. */
+    private long expectedPatchSize() {
+        try {
+            if (versionFile().exists()) {
+                java.util.Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
+                long s = Long.parseLong(v.getOrDefault("patch_size", "0"));
+                if (s > 0) return s;
+            }
+        } catch (Throwable ignored) {}
+        return DEFAULT_EXPECTED_SIZE;
     }
 
     private static String readSmall(File f) throws Exception {
@@ -770,8 +788,9 @@ public class MainActivity extends Activity {
                 throw new IllegalStateException("cannot read metadata:\n" + r2);
         }
 
-        // 3. AES keys from the game's own metadata (offsets from version.json or defaults)
-        int keyOff = 0xBCEA58, ivOff = 0xBD6228;
+        // 3. AES keys from the game's own metadata (offsets from version.json or
+        // defaults — the 08-13 APK-era offsets moved; version.json wins when present)
+        int keyOff = 0xBCF290, ivOff = 0xBD1CE8;
         try {
             if (versionFile().exists()) {
                 java.util.Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
