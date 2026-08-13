@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
     private TextView log;
     private TextView statusText;
     private android.graphics.drawable.GradientDrawable statusDot;
-    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, downloadBtn, autoBtn;
+    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, shizukuGithubBtn, downloadBtn, autoBtn, resetBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private IUserService service;
@@ -175,6 +175,9 @@ public class MainActivity extends Activity {
         ll.addView(log);
 
         shizukuBtn = new Button(this);
+        // Text is set immediately (not only via refreshStatus) so the button is
+        // never blank when the binder hasn't arrived yet.
+        shizukuBtn.setText("Get Shizuku (Play Store)");
         shizukuBtn.setOnClickListener(v -> {
             if (isShizukuInstalled()) {
                 Intent launch = getPackageManager().getLaunchIntentForPackage(SHIZUKU_PKG);
@@ -184,6 +187,18 @@ public class MainActivity extends Activity {
             }
         });
         ll.addView(shizukuBtn);
+
+        shizukuGithubBtn = new Button(this);
+        shizukuGithubBtn.setText("Get Shizuku (GitHub)");
+        shizukuGithubBtn.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://github.com/RikkaApps/Shizuku/releases")));
+            } catch (android.content.ActivityNotFoundException e) {
+                log("No browser found to open GitHub.");
+            }
+        });
+        ll.addView(shizukuGithubBtn);
 
         pickBtn = new Button(this);
         pickBtn.setText("Choose __data file…");
@@ -205,6 +220,11 @@ public class MainActivity extends Activity {
         applyBtn.setEnabled(false);
         applyBtn.setOnClickListener(v -> onApply());
         ll.addView(applyBtn);
+
+        resetBtn = new Button(this);
+        resetBtn.setText("Delete all language packs (reset)");
+        resetBtn.setOnClickListener(v -> onResetLangPacks());
+        ll.addView(resetBtn);
 
         uninstallBtn = new Button(this);
         uninstallBtn.setText("Uninstall this app (needed again after each game update)");
@@ -250,7 +270,7 @@ public class MainActivity extends Activity {
                     ui.postDelayed(this, 1000);
                 } else {
                     log("\nShizuku is not running (or this app is not authorized).\n"
-                            + "1. Install Shizuku from the Play Store and start it.\n"
+                            + "1. Install Shizuku from the Play Store or GitHub (RikkaApps/Shizuku) and start it.\n"
                             + "2. Reopen this app and allow the Shizuku permission prompt.");
                 }
             }
@@ -313,24 +333,28 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** Recompute the status light and the Shizuku helper button from current state. */
+    /** Recompute the status light and the Shizuku helper buttons from current state. */
     private void refreshStatus() {
         ui.post(() -> {
             if (service == null) {
                 if (isShizukuInstalled()) {
                     shizukuBtn.setText("Open Shizuku & tap Start");
+                    shizukuGithubBtn.setVisibility(View.GONE);
                 } else {
                     shizukuBtn.setText("Get Shizuku (Play Store)");
+                    shizukuGithubBtn.setText("Get Shizuku (GitHub)");
+                    shizukuGithubBtn.setVisibility(View.VISIBLE);
                 }
                 shizukuBtn.setVisibility(View.VISIBLE);
             } else {
                 shizukuBtn.setVisibility(View.GONE);
+                shizukuGithubBtn.setVisibility(View.GONE);
             }
         });
         if (service == null) {
             setStatus(0xFFD32F2F, isShizukuInstalled()
                     ? "Shizuku is installed but not running — open it and tap Start."
-                    : "Shizuku is not installed — get it from the Play Store (button below).");
+                    : "Shizuku is not installed — get it from the Play Store or GitHub (buttons below).");
         } else if (localPatch() != null && localPatch().exists()) {
             setStatus(0xFF388E3C, "Ready — tap \"Apply English patch\".");
         } else {
@@ -522,9 +546,45 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Tap the status line: self-test BOTH shell paths + killer-setting hints. */
-    private void runDiagnostics() {
+    /** Delete every cached language pack so the game re-downloads stock JP.
+     *  Use this when our patch made things worse (wrong-version bundle, crash
+     *  on load, missing text): the game fetches a clean JP bundle next launch. */
+    private void onResetLangPacks() {
+        if (service == null && !shizukuReady) {
+            log("ERROR: connect Shizuku first (reset needs shell access).");
+            return;
+        }
+        resetBtn.setEnabled(false);
         new Thread(() -> {
+            try {
+                execShell("am force-stop " + GAME_PKG);
+                // delete every __data under the language group folder (all versions)
+                String r = execShell(
+                        "for f in " + GAME_CACHE_GLOB + "; do rm -f \"$f\" && echo \"DEL:$f\"; done");
+                int del = 0;
+                for (String line : r.split("\n")) {
+                    line = line.trim();
+                    if (line.startsWith("DEL:")) del++;
+                }
+                log(del > 0
+                        ? "Deleted " + del + " language pack(s).\nNext game launch re-downloads clean JP."
+                        : "No language packs found to delete (game already clean?).");
+                // also drop our staged patch so a stale __data isn't reapplied later
+                File staged = stagedPatch();
+                if (staged != null && staged.exists()) {
+                    staged.delete();
+                    log("Also cleared the staged patch file.");
+                }
+            } catch (Throwable t) {
+                log("ERROR resetting language packs: " + t.getMessage());
+            } finally {
+                ui.post(() -> resetBtn.setEnabled(true));
+            }
+        }, "reset").start();
+    }
+
+    /** Tap the status line: self-test BOTH shell paths + killer-setting hints. */
+    private void runDiagnostics() {        new Thread(() -> {
             log("\n— Diagnostics —");
             log("UserService bound: " + (service != null)
                     + " | newProcess available: " + ShellRunner.available());
@@ -572,6 +632,21 @@ public class MainActivity extends Activity {
 
     // ---------------- download latest patch (P1) ----------------
 
+    /** Size of the newest live language bundle on the device, or null if none. */
+    private String newestLiveBundleSize() {
+        try {
+            String srcQ = execShell("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
+                    .replace("exit=0", "").trim();
+            String srcBundle = srcQ.startsWith("/sdcard/") ? srcQ.split("\n")[0] : "";
+            if (srcBundle.isEmpty()) return null;
+            String sz = execShell("stat -c %s '" + srcBundle + "' 2>/dev/null || wc -c < '" + srcBundle + "'")
+                    .replace("exit=0", "").trim();
+            return sz.split("\n")[0].trim();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
     private void onDownload() {
         downloadBtn.setEnabled(false);
         new Thread(() -> {
@@ -583,6 +658,17 @@ public class MainActivity extends Activity {
                 long wantSize = Long.parseLong(v.getOrDefault("patch_size", "0"));
                 String wantMd5 = v.getOrDefault("patch_md5", "");
                 log("Latest: " + wantSize + " bytes, built " + v.getOrDefault("built_at", "?"));
+                // Cross-check against the live bundle on the device: if the game
+                // updated since this patch was built, the sizes won't match and
+                // the downloadable patch is the WRONG version for this game.
+                String live = newestLiveBundleSize();
+                if (live != null && wantSize > 0 && !live.equals(String.valueOf(wantSize))) {
+                    log("NOTE: your game's language pack is " + live + " bytes, but this patch is "
+                            + wantSize + " bytes.");
+                    log("That means the game updated AFTER this patch was built — Download+Apply "
+                            + "would install the wrong version.\nUse \"Auto-patch after update\" "
+                            + "instead (it builds from your live bundle).");
+                }
                 File staged = stagedPatch();
                 if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
                     log("You already have the latest patch — nothing to download.");
@@ -616,7 +702,6 @@ public class MainActivity extends Activity {
             }
         }, "download").start();
     }
-
     // ---------------- on-device auto-patch (beta) ----------------
 
     private void onAutoPatch() {
