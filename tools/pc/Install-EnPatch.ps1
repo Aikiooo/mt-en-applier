@@ -81,12 +81,12 @@ Get-Content -LiteralPath $liveBoot | Where-Object { $_ -notmatch '^nolog=' } | S
 
 # --- 4. seed the language cache ----------------------------------------------
 Write-Host 'seeding EN language bundle into the Unity cache ...'
-$res = Install-LanguageCache -LangBundlePath $langBundle
+$res = Install-LanguageCache -LangBundlePath $langBundle -ExpectedSize ([int64]$art.Want.lang.size)
 Write-Host "  cache : $($res.CacheDir)"
 Write-Host "  __data md5 $($res.DataMd5.Substring(0,8))...  size-ok=$($res.SizeOk)"
 
 if (-not $res.SizeOk) {
-    Write-Host 'WARNING: seeded __data is not the expected 1,777,229 bytes.'
+    Write-Host "WARNING: seeded __data is not the expected $($art.Want.lang.size) bytes."
 }
 
 Write-Host ''

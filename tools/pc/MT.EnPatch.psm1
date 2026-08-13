@@ -146,7 +146,12 @@ function Get-PatchArtifacts {
 
 # Seed the exact-size EN language bundle into the Unity cache __data (catalog untouched).
 function Install-LanguageCache {
-    param([Parameter(Mandatory)][string]$LangBundlePath)
+    param(
+        [Parameter(Mandatory)][string]$LangBundlePath,
+        # Live expected size from version.json's pc block (caller passes it);
+        # the constant is only a fallback so size changes never need a psm1 bump.
+        [int64]$ExpectedSize = $script:LangBundleSize
+    )
     $cacheDir = Get-LangCacheDir
     if (-not $cacheDir) {
         $pub = Get-UnityCachePublisherDir
@@ -164,7 +169,7 @@ function Install-LanguageCache {
     return [pscustomobject]@{
         CacheDir = $cacheDir
         DataMd5  = Get-Md5 $dataDst
-        SizeOk   = ((Get-Item $dataDst).Length -eq $script:LangBundleSize)
+        SizeOk   = ((Get-Item $dataDst).Length -eq $ExpectedSize)
     }
 }
 
