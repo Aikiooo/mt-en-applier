@@ -48,16 +48,13 @@ anything about PowerShell or command lines. Just follow the 3 steps.
   (You only do this again if the game gets an update.)
 
 
-  STEP 2 - play (every time)
+  STEP 2 - play
   ------------------------------------------------------------
-  Double-click:
+  Click PLAY in DMM GAME PLAYER and play. Nothing else needed.
 
-        Play-En.bat
-
-  Then click PLAY in DMM GAME PLAYER. Keep the black window OPEN
-  while you play - it quietly puts the English files in and puts
-  the originals back when you quit. When you're done playing,
-  press any key to close it.
+  The patch is already in the game's cache, so it stays applied
+  until the game updates. If English disappears (game update or a
+  DMM file repair), just double-click Install-EnPatch.bat again.
 
   That's it. The game is in English.
 
@@ -83,8 +80,8 @@ anything about PowerShell or command lines. Just follow the 3 steps.
     source is right here for anyone to read.
 
 * DMM "repaired" the game and English is gone
-    You launched the game from DMM directly instead of through
-    Play-En.bat. Always start with Play-En.bat.
+    A game update or a DMM file repair restored the stock files.
+    Just double-click Install-EnPatch.bat again.
 
 * Still stuck?
     Open README.md in this folder (full guide), or open an issue:

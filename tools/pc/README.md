@@ -12,7 +12,7 @@ Unofficial English patch for the **Windows / DMM** release of *Mushoku Tensei: C
 
 1. **Download** the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) and extract it anywhere.
 2. Double-click **`Install-EnPatch.bat`** — once. It does everything.
-3. Double-click **`Play-En.bat`** every time you play, then click **Play** in DMM GAME PLAYER. Leave the window open while you play.
+3. Click **Play** in DMM GAME PLAYER and play in English. The language bundle stays patched in the game's cache until the game updates.
 
 Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
 (Or read the same guide in your browser: https://www.mtcoe.com/#/en-patch.)
@@ -22,9 +22,6 @@ Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
 ```powershell
 # once:
 powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1
-
-# every time you play:
-powershell -ExecutionPolicy Bypass -File Play-En.ps1
 ```
 
 If the installer can't find the game, pass its folder: `Install-EnPatch.ps1 -GameDir 'D:\Games\mushoku_coe_cl'`
@@ -41,7 +38,7 @@ The PC client checks files in **two different places**, so the patch is two part
 Two rules make this work (learned the hard way):
 
 1. **Leave the Addressables catalog pristine.** The game validates every bundle against the catalog's pinned `m_BundleSize` and `m_Crc` (a CRC32 of the *decompressed* stream). Editing the catalog — or feeding a bundle whose size/CRC doesn't match — is exactly what produces the **"Failed to acquire resources"** error. The fix is to rebuild the bundle to the stock byte size and forge the matching CRC, then drop it in the cache.
-2. **Never leave the inapp bundle patched on disk.** DMM GAME PLAYER verifies all ~68 game files against the server manifest on every launch and repairs any mismatch. So `Play-En.ps1` keeps the **stock** bundle in place for the check, swaps the EN patch in the instant the game exe spawns (the file check is already done), and restores stock when the game exits.
+2. **The language bundle lives in the cache, not in the game files.** The installer seeds it into the Unity Addressables cache (`…\LocalLow\Unity\GREE Entertainment_クロエコ\…\__data`), which DMM's per-launch file verification does not touch — so it stays applied until the game itself refreshes that cache (a title update). If DMM ever repairs or the game updates, just re-run `Install-EnPatch.bat`.
 
 ## Requirements
 
@@ -60,7 +57,7 @@ Two rules make this work (learned the hard way):
 
 ## Play
 
-Run `Play-En.ps1`, then click **Play** in DMM GAME PLAYER (or let the script try to launch it for you). Leave the PowerShell window open while you play — it restores the stock files when you quit. `-NoLaunch` arms the watcher without auto-launching.
+The installer seeds the language bundle into the game's Unity cache — that's the patch. Just click **Play** in DMM GAME PLAYER; no launcher or terminal needed while playing.
 
 ### Tip (same as Android): load twice for full coverage
 
@@ -68,17 +65,17 @@ Some screens only pull their text on the first load. If you see a stray Japanese
 
 ## After a game update
 
-A title-update usually refreshes the inapp bundle and the cached language bundle. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then play via `Play-En.ps1` again.
+A title-update usually refreshes the game's cached language bundle, wiping the patch. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then click Play in DMM again.
 
 ## Uninstall
 
 - Delete the seeded cache folder `…\GREE Entertainment_クロエコ\<guid>\<hash>\` (or just let the game re-download), and
-- in DMM GAME PLAYER, use the game's **file verify / repair** to restore the stock inapp bundle, then delete `%LOCALAPPDATA%\MT-EN-Applier\pc\`.
+- delete `%LOCALAPPDATA%\MT-EN-Applier\pc\`.
 
 ## Troubleshooting
 
 - **"Failed to acquire resources" at join/login** → the language bundle in the cache doesn't match the catalog (wrong size/CRC). Re-run `Install-EnPatch.ps1`; don't hand-edit the catalog.
-- **DMM "repairs" the patch away** → you launched without `Play-En.ps1`. Always start via the wrapper so the stock bundle is present for the file check.
+- **DMM "repairs" the patch away** → a DMM file repair or a game update restored the stock files. Re-run `Install-EnPatch.bat`.
 - **Some text still Japanese** → see the "load twice" tip above; otherwise the translation may simply not cover that string yet (the same cache drives Android).
 - **Installer can't find the game** → pass `-GameDir` with the folder containing `mushoku_coe_cl.exe`.
 
@@ -88,8 +85,6 @@ A title-update usually refreshes the inapp bundle and the cached language bundle
 |------|---------|
 | `Install-EnPatch.bat` | Double-click installer wrapper (runs the `.ps1`). **Start here.** |
 | `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. |
-| `Play-En.bat` | Double-click play wrapper — run this every time, then click Play in DMM. |
-| `Play-En.ps1` | Launch wrapper: stock for the DMM check, EN swap at spawn, restore on exit. |
 | `MT.EnPatch.psm1` | Shared constants + functions (cache seeding, download/verify, game detection). |
 | `START-HERE.txt` | The 3-step plain-language guide for non-technical users. |
 | `maintainer/` | Maintainer-side builders that produce the release artifacts (PC bundles + `version.json`, and this user zip). |

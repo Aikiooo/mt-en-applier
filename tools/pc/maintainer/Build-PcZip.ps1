@@ -5,12 +5,11 @@
 .DESCRIPTION
   Users should never have to clone the repo or open a terminal. This packages
   the tools/pc folder into a single zip that someone downloads, extracts, and
-  uses via two double-click files (Install-EnPatch.bat, then Play-En.bat).
+  installs with one double-click file (Install-EnPatch.bat).
 
   The zip contains ONLY the user-facing files:
     Install-EnPatch.bat / .ps1   - double-click installer
-    Play-En.bat / .ps1           - double-click play launcher
-    MT.EnPatch.psm1              - shared helpers the two scripts import
+    MT.EnPatch.psm1              - shared helpers the installer imports
     START-HERE.txt               - the 3-step plain-language guide
     README.md                    - the full guide
 
@@ -46,8 +45,6 @@ $zipPath = Join-Path $OutDir $ZipName
 $userFiles = @(
     'Install-EnPatch.bat',
     'Install-EnPatch.ps1',
-    'Play-En.bat',
-    'Play-En.ps1',
     'MT.EnPatch.psm1',
     'START-HERE.txt',
     'README.md'
@@ -79,11 +76,12 @@ if ($Publish) {
     $ErrorActionPreference = $prevEAP
 
     $notes = @'
-**One download, two double-clicks - no terminal, no repo clone.**
+**One download, one double-click - no terminal, no repo clone.**
 
 1. Download and extract the zip below.
 2. Double-click **`Install-EnPatch.bat`** (once).
-3. Double-click **`Play-En.bat`** every time you play, then click Play in DMM GAME PLAYER.
+3. Click **Play** in DMM GAME PLAYER and play in English.
+   (If a DMM file repair or a game update wipes the patch, just re-run the installer.)
 
 Open **`START-HERE.txt`** in the zip for the plain-language walkthrough.
 

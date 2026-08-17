@@ -8,10 +8,10 @@
   - Seeds the exact-size, CRC-forged language bundle into the Unity
     Addressables cache (__data). The catalog is left untouched; editing the
     catalog is what triggers the "Failed to acquire resources" integrity error.
-  - Captures clean stock copies (inapp bundle + boot.config) the play wrapper
-    needs so DMM's per-launch file check passes.
+  - Captures clean stock copies (inapp bundle + boot.config) so DMM file
+    repairs stay reversible and a future launcher can satisfy the file check.
 
-  Run this once. After that, play via Play-En.ps1.
+  Run this once. After that, just click Play in DMM GAME PLAYER.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1
@@ -55,8 +55,8 @@ $inappPatch  = $art.Files.inapp
 Write-Host "  language bundle : $(Split-Path $langBundle -Leaf)  ($((Get-Item $langBundle).Length) B, md5 $((Get-Md5 $langBundle).Substring(0,8))...)"
 Write-Host "  inapp patch     : $(Split-Path $inappPatch -Leaf)  ($((Get-Item $inappPatch).Length) B)"
 
-# --- 3. stock backups (needed by Play-En.ps1) --------------------------------
-# Keep clean stock copies so the wrapper can satisfy DMM's file check, then swap.
+# --- 3. stock backups (so DMM repairs are reversible; kept for a future launcher) ----
+# Keep clean stock copies so a file check / repair can be satisfied, then re-seeded.
 $stockInapp = Join-Path $PatchDataDir 'stock_inapp_assets_all.bundle'
 $stockBoot  = Join-Path $PatchDataDir 'stock_boot.config'
 
@@ -91,10 +91,5 @@ if (-not $res.SizeOk) {
 
 Write-Host ''
 Write-Host 'Install complete. To play in English:'
-if (Test-Path -LiteralPath (Join-Path $here 'Play-En.bat')) {
-    Write-Host '  double-click Play-En.bat'
-    Write-Host '(from a terminal instead:  powershell -ExecutionPolicy Bypass -File Play-En.ps1)'
-} else {
-    Write-Host '  powershell -ExecutionPolicy Bypass -File Play-En.ps1'
-}
-Write-Host '(Play-En keeps DMM''s file check happy and swaps the EN patch in at boot.)'
+Write-Host '  click Play in DMM GAME PLAYER (no launcher needed)'
+Write-Host '(The language bundle is seeded into the game cache and stays until the game updates.)'

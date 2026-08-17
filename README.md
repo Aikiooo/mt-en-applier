@@ -19,8 +19,8 @@ One translation, every platform. Pick yours:
 | **Android emulator / rooted / GPG-PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
 
 PC users: **no repo clone, no terminal**. Grab the zip from the
-[Releases](../../releases) tab, extract it, double-click `Install-EnPatch.bat`
-once, then `Play-En.bat` every time you play. `START-HERE.txt` in the zip is
+[Releases](../../releases) tab, extract it, and double-click `Install-EnPatch.bat`
+once. Then just click **Play** in DMM GAME PLAYER. `START-HERE.txt` in the zip is
 the whole guide in plain language.
 
 All three pull the same translation from the rolling
