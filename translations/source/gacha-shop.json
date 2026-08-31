@@ -15,8 +15,12 @@
   "PvEチケット": "PvE Ticket",
   "PvEチケットの説明": "Description of PvE Ticket",
   "Webショップ": "Web Shop",
+  "[剣神の娘] ニナ ピックアップガチャ": "[Daughter of the Sword God] Nina Pickup Gacha",
+  "[守護術師] フィッツ ピックアップガチャ": "[Guardian Mage] Fitz Pickup Gacha",
+  "[水王] イゾルテ ピックアップガチャ": "[Water King] Isolte Pickup Gacha",
   "[泥沼] ルーデウス ピックアップガチャ": "[Quagmire] Rudeus Pickup Gacha",
   "[生徒会長] アリエル ピックアップガチャ": "[Student Council President] Ariel Pickup Gacha",
+  "[魔界大帝] キシリカ ピックアップガチャ": "[Great Demon Emperor] Kishirika Pickup Gacha",
   "webショップをご利用いただくには、アプリ内でのアカウント連携が必要です。<br><br>GoogleアカウントもしくはAppleアカウントと連携をした上で、認証ボタンからサインインしてください。": "To use the web shop, you need to link your account within the app.<br><br>Link your Google or Apple account, then sign in using the authentication button.",
   "webショップ用支払い画面への遷移": "Redirect to Web Shop Payment Screen",
   "webショップ用支払い画面初期化": "Initialize Web Shop Payment Screen",
@@ -212,9 +216,11 @@
   "有償魔石440個<br>魔石20個(おまけ)<br>合計460個": "Paid Magic Stone x440<br>Magic Stone x20 (bonus)<br>Total 460",
   "有償魔石5100個<br>魔石260個(おまけ)<br>合計5360個": "Paid Magic Stone x5100<br>Magic Stone x260 (bonus)<br>Total 5360",
   "有償魔石930個<br>魔石40個(おまけ)<br>合計970個": "Paid Magic Stone x930<br>Magic Stone x40 (bonus)<br>Total 970",
+  "期間限定[幻惑の兎耳] ロキシー ピックアップガチャ": "Limited-Time [Bewitching Bunny Ears] Roxy Pickup Gacha",
   "期間限定[真夏の乙女] ロキシー ピックアップガチャ": "Limited [Midsummer Maiden] Roxy Pickup Gacha",
   "期間限定[真夏の幻影] エリス ピックアップガチャ": "Limited [Midsummer Phantom] Eris Pickup Gacha",
   "期間限定[真夏の淑女] シルフィエット ピックアップガチャ": "Limited [Midsummer Lady] Sylphiette Pickup Gacha",
+  "期間限定[魔大陸の南瓜娘] エリス ピックアップガチャ": "Limited-Time [Pumpkin Girl of the Demon Continent] Eris Pickup Gacha",
   "期間限定★5確定ガチャ": "Limited Guaranteed ★5 Gacha",
   "本ガチャは何度でも引き直す事が可能ですが、<br>今回の結果で確定してもよろしいですか？": "You can reroll this gacha as many times as you like,<br>but are you sure you want to confirm this result?",
   "残響片交換所では各キャラクターの残響石を変換して入手できる残響片を消費して好きなものと交換できます。": "In the Echo Fragment Exchange, you can spend Echo Fragments obtained by converting each character's Echo Stones to exchange for items of your choice.",
@@ -248,5 +254,6 @@
   "限定ピックアップガチャチケット": "Limited Pickup Gacha Ticket",
   "集めたイベントアイテムは、<br>イベント交換所で限定の追憶などと交換できます。": "Collected event items can be exchanged<br>for limited Recollections and more at the Event Exchange.",
   "集めたメダルは<color={2}>イベント交換所</color>で豪華景品と交換できる！<br>このイベント限定アイテムもあるので、要チェック！": "Exchange collected medals for lavish prizes at the <color={2}>Event Exchange</color>!<br>Check for limited-time items exclusive to this event!",
-  "集めた共闘戦メダルは、<br>共闘戦交換所で装備品などと交換できます。": "Collected Co-op Medals can be exchanged<br>for equipment and more at the Co-op Exchange."
+  "集めた共闘戦メダルは、<br>共闘戦交換所で装備品などと交換できます。": "Collected Co-op Medals can be exchanged<br>for equipment and more at the Co-op Exchange.",
+  "魔石（無償）100個": "Magic Stone (Free) x100"
 }
