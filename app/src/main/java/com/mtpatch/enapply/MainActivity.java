@@ -49,7 +49,7 @@ public class MainActivity extends Activity {
 
     /** Fallback only: the live patch_size comes from version.json (see
      *  expectedPatchSize()), so size changes never require an app update. */
-    private static final long DEFAULT_EXPECTED_SIZE = 1805772L;
+    private static final long DEFAULT_EXPECTED_SIZE = 1895090L;
 
     private static final String GAME_PKG = "jp.gree_ent.mushoku";
     private static final String RELEASE_BASE =

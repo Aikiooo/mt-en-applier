@@ -10,7 +10,7 @@ Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes*.
 
 One translation, every platform. Pick yours:
 
-> **Last patch:** 2026-08-31 (v7). See [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
+> **Last patch:** 2026-09-28 (v10). See [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
 
 | Platform | Method | Guide |
 |----------|--------|-------|
