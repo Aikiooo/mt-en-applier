@@ -24,12 +24,12 @@
 #>
 param(
     [string]$SourceDir = 'D:\grok\Mushoku Tensei\pc_client',
-    [string]$LangBundleName   = 'language-ja_en_exact1895090.bundle',
+    [string]$LangBundleName   = 'language-ja_en_exact1896110.bundle',
     [string]$InappPatchName   = 'inapp_assets_all_en.bundle',
     # Unity cache asset-hash subfolder for the language bundle (the folder the
     # game looks in: …\GREE Entertainment_*\<guid>\<hash>\__data). MUST match the
     # bundle's current asset hash or fresh PC installs seed the wrong folder.
-    [string]$LangBundleHash = '65ed4ee196147bb7fc9ac0253b705902',
+    [string]$LangBundleHash = '50e4537b475104db4171d5c1deb8a84b',
     [string]$OutDir = (Join-Path $env:TEMP 'mt-pc-patch-release'),
     [switch]$Publish,
     [string]$Repo = 'Aikiooo/mt-en-applier',
