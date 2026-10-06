@@ -343,6 +343,7 @@
   "通信に失敗しました。タイトルへ戻ります。": "Communication failed. Returning to title.",
   "通信エラー": "Communication Error",
   "通信エラーが発生しました。": "A communication error has occurred.",
+  "通信エラーが発生しました。もう一度お試しください。": "A communication error has occurred. Please try again.",
   "通信呼出し上限エラー": "Communication call limit error",
   "通知したエラーの一覧画面": "Notified error list screen",
   "通知設定": "Notification Settings",
