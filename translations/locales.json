@@ -1,0 +1,7 @@
+{
+  "default": "en",
+  "locales": {
+    "en": { "name": "English" },
+    "es": { "name": "Español" }
+  }
+}

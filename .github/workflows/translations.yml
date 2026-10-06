@@ -4,10 +4,14 @@ on:
   pull_request:
     paths:
       - 'translations/**'
+      - 'tools/translations/**'
+      - '.github/workflows/translations.yml'
   push:
     branches: [main]
     paths:
       - 'translations/**'
+      - 'tools/translations/**'
+      - '.github/workflows/translations.yml'
 
 jobs:
   validate:
@@ -15,16 +19,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rebuild cache from sources
+      # Every locale is rebuilt: this proves the sources parse, that no key is
+      # duplicated, and (for a sparse locale) that it invents no key English lacks.
+      - name: Rebuild every locale from sources
         shell: pwsh
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Out "$env:TEMP/translation_cache.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $registry = Get-Content translations/locales.json -Raw | ConvertFrom-Json
+          $default = $registry.default
+          $locales = @($registry.locales.PSObject.Properties.Name)
+          if ($locales -notcontains $default) {
+            Write-Host "ERROR: default locale '$default' is not listed in locales.json"
+            exit 1
+          }
+          foreach ($l in $locales) {
+            Write-Host "::group::build $l"
+            powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Locale $l
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Write-Host "::endgroup::"
+          }
 
-      - name: Compare against released cache (semantic)
+      # Semantic compare runs only for locales that have shipped: an unpublished
+      # locale has no release artifact yet, and a 404 is not a failure.
+      - name: Compare published locales against the released cache (semantic)
         shell: pwsh
         run: |
-          $baseline = "$env:TEMP/tc_baseline.json"
-          Invoke-WebRequest -Uri "https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/translation_cache.json" -OutFile $baseline
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Out "$env:TEMP/translation_cache.json" -Baseline $baseline
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $registry = Get-Content translations/locales.json -Raw | ConvertFrom-Json
+          $default = $registry.default
+          $locales = @($registry.locales.PSObject.Properties.Name)
+          $base = "https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest"
+          foreach ($l in $locales) {
+            if ($l -eq $default) { $name = "translation_cache.json" } else { $name = "translation_cache.$l.json" }
+            $baseline = "$env:TEMP/tc_$l.json"
+            try {
+              Invoke-WebRequest -UseBasicParsing -Uri "$base/$name" -OutFile $baseline -ErrorAction Stop
+            } catch {
+              $code = $null
+              if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+              if ($code -eq 404) {
+                Write-Host "locale '$l' has no published '$name' yet - skipping semantic compare"
+                continue
+              }
+              throw
+            }
+            powershell -NoProfile -ExecutionPolicy Bypass -File tools/translations/Build-TranslationCache.ps1 -Locale $l -Baseline $baseline
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }

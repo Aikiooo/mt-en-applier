@@ -1,31 +1,58 @@
 <#
 .SYNOPSIS
-  Split the monolithic translation_cache.json into human-editable themed source files.
+  Split a built translation_cache.json back into human-editable, themed source files.
 
 .DESCRIPTION
-  One-time / re-runnable generator. Reads the compact patch-latest
-  translation_cache.json and writes:
+  Re-runnable generator. Reads a compact translation_cache.json and writes into the
+  locale's folder under translations/:
 
-    translations/source/<theme>.json   - the big JP->EN "cache" map, grouped by
-                                         theme, ONE entry per line, keys sorted.
-    translations/hand/<table>.json     - the ID-keyed "hand" tables (e_ui_text,
-                                         e_day_of_week), one entry per line.
+    <locale>/source/<theme>.json  - the JP -> value map, grouped by theme, ONE entry
+                                    per line, keys sorted.
+    <locale>/hand/<table>.json    - the ID-keyed hand tables, one entry per line.
 
-  One-entry-per-line is the whole point: a PR that changes a single translation
-  shows a single-line diff instead of a 2 MB blob.
+  One-entry-per-line is the whole point: a PR that changes a single translation shows
+  a single-line diff instead of a 2 MB blob.
 
-  The split is LOSSLESS: Build-TranslationCache.ps1 re-merges these files into a
-  byte-identical cache (keys are sorted everywhere, so order is deterministic).
+  The default locale (English) is split in FULL and is lossless.
+
+  A non-default locale is SPARSE: pass -Canonical (the built default-locale cache) and
+  only the entries whose value differs from it are written, so regenerating does not
+  re-inflate English back into the locale's files.
 
 .EXAMPLE
-  python tools/translations/split_translation_cache.py -Cache path\to\translation_cache.json
+  powershell -File tools\translations\split_translation_cache.ps1 -Cache path\to\translation_cache.json
+
+.EXAMPLE
+  # refresh a sparse locale against the current English cache
+  powershell -File tools\translations\split_translation_cache.ps1 -Cache tc.es.json -Locale es -Canonical tc.en.json
 #>
 param(
-    [string]$Cache = (Join-Path $env:TEMP 'mt-tcache\tc.json'),
+    [Parameter(Mandatory)][string]$Cache,
+    [string]$Locale,
+    [string]$Canonical,
     [string]$OutRoot = (Join-Path $PSScriptRoot '..\..\translations')
 )
 
 $ErrorActionPreference = 'Stop'
+
+$localesPath = Join-Path $OutRoot 'locales.json'
+if (-not (Test-Path -LiteralPath $localesPath)) { throw "missing locale registry: $localesPath" }
+$registry = Get-Content -LiteralPath $localesPath -Raw | ConvertFrom-Json
+$defaultLocale = $registry.default
+if (-not $Locale) { $Locale = $defaultLocale }
+$known = @($registry.locales.PSObject.Properties.Name)
+if ($known -notcontains $Locale) { throw "unknown locale '$Locale' (known: $($known -join ', '))" }
+
+if ($Locale -ne $defaultLocale -and -not $Canonical) {
+    throw "locale '$Locale' is sparse: pass -Canonical (the built '$defaultLocale' cache) so only differing entries are written."
+}
+if ($Locale -eq $defaultLocale -and $Canonical) {
+    Write-Host "note: -Canonical is ignored for the default locale '$defaultLocale' (full split)."
+}
+
 $py = Join-Path $PSScriptRoot '_split_translation_cache_impl.py'
 if (-not (Test-Path $py)) { throw "missing helper: $py" }
-python $py --cache $Cache --out $OutRoot
+
+$pyArgs = @($py, '--cache', $Cache, '--out', $OutRoot, '--locale', $Locale)
+if ($Canonical) { $pyArgs += @('--canonical', $Canonical) }
+python @pyArgs

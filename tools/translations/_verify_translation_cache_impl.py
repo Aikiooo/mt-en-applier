@@ -12,8 +12,13 @@ the guarantee CI actually needs is:
 Exit 0 when semantically identical, 1 otherwise (with a diagnostic diff summary).
 """
 import argparse
+import io
 import json
 import sys
+
+# Diff output contains Japanese; the Windows default (cp1252) cannot encode it, so a
+# mismatch would crash here instead of printing the diagnostic. Match the splitter.
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 def load(path):
