@@ -344,8 +344,7 @@ public class MainActivity extends Activity {
         autoBtn = makeButton("Auto-patch after update (beta)", BTN_SECONDARY, v -> onAutoPatch());
         actions.addView(autoBtn);
 
-        uninstallBtn = makeButton("Uninstall this app", BTN_QUIET, v -> startActivity(new Intent(
-                Intent.ACTION_DELETE, Uri.parse("package:" + getPackageName()))));
+        uninstallBtn = makeButton("Uninstall this app", BTN_QUIET, v -> requestUninstall());
         uninstallBtn.setVisibility(View.GONE);
         actions.addView(uninstallBtn);
 
@@ -787,6 +786,21 @@ public class MainActivity extends Activity {
             return true;
         } catch (PackageManager.NameNotFoundException e) {
             return false;
+        }
+    }
+
+    /** System uninstall prompt; if a ROM still refuses it, open this app's
+     *  settings page, which always has an Uninstall button. */
+    private void requestUninstall() {
+        Uri pkg = Uri.parse("package:" + getPackageName());
+        try {
+            startActivity(new Intent(Intent.ACTION_DELETE, pkg));
+        } catch (Throwable t) {
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg));
+            } catch (Throwable t2) {
+                log("Couldn't open the uninstall prompt; uninstall from Settings > Apps.");
+            }
         }
     }
 

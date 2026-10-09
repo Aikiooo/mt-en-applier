@@ -8,6 +8,10 @@
     <!-- Download the latest patch + translation cache from GitHub Releases. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- "Uninstall this app" button: since targetSdk 28 the system silently ignores
+         ACTION_DELETE from apps that don't declare this (install-time, no prompt). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
     <!-- No storage permission needed: we read __data from our own app-specific
          external dir (getExternalFilesDir) and write via Shizuku (shell uid). -->
 
