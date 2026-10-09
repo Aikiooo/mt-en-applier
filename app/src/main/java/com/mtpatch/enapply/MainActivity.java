@@ -104,6 +104,18 @@ public class MainActivity extends Activity {
 
     private static final int LOG_MAX_LINES = 300;
 
+    private static final String PREFS = "applier";
+    /** Patch language the user picked (a PatchLanguage code). */
+    private static final String PREF_LANG = "lang";
+    /** Language of the staged __data: a code, or STAGED_CUSTOM for a picked file. */
+    private static final String PREF_STAGED_LANG = "staged_lang";
+    private static final String STAGED_CUSTOM = "custom";
+
+    /** Languages published on the release (English first), from version.json. */
+    private volatile List<PatchLanguage> languages = new ArrayList<>();
+    private LinearLayout langRow;
+    private TextView langValue, langHint;
+
     private TextView logText;
     private ScrollView logScroll;
     private final ArrayDeque<String> logLines = new ArrayDeque<>();
@@ -200,7 +212,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Unofficial English patch for Mushoku Tensei" + versionSuffix());
+        subtitle.setText("Unofficial fan translation for Mushoku Tensei" + versionSuffix());
         subtitle.setTextSize(13);
         subtitle.setTextColor(C_TEXT_DIM);
         subtitle.setPadding(0, dp(2), 0, dp(12));
@@ -246,6 +258,42 @@ public class MainActivity extends Activity {
         diagLink.setPadding(dp(8), 0, 0, 0);
         statusCard.addView(diagLink);
         root.addView(statusCard);
+
+        // ---- patch language: only shown once the release publishes >1 language ----
+        langRow = new LinearLayout(this);
+        langRow.setOrientation(LinearLayout.HORIZONTAL);
+        langRow.setGravity(Gravity.CENTER_VERTICAL);
+        langRow.setPadding(dp(14), dp(10), dp(14), dp(10));
+        langRow.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22FFFFFF),
+                rounded(C_SURFACE, C_STROKE, 12), null));
+        langRow.setClickable(true);
+        langRow.setOnClickListener(v -> showLanguagePicker());
+
+        LinearLayout langTexts = new LinearLayout(this);
+        langTexts.setOrientation(LinearLayout.VERTICAL);
+        TextView langLabel = new TextView(this);
+        langLabel.setText("Patch language");
+        langLabel.setTextSize(15);
+        langLabel.setTextColor(C_TEXT);
+        langTexts.addView(langLabel);
+        langHint = new TextView(this);
+        langHint.setTextSize(12);
+        langHint.setTextColor(C_TEXT_DIM);
+        langTexts.addView(langHint);
+        langRow.addView(langTexts, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        langValue = new TextView(this);
+        langValue.setTextSize(15);
+        langValue.setTypeface(Typeface.DEFAULT_BOLD);
+        langValue.setTextColor(C_ACCENT);
+        langValue.setPadding(dp(8), 0, 0, 0);
+        langRow.addView(langValue);
+        langRow.setVisibility(View.GONE);
+        LinearLayout.LayoutParams langLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        langLp.topMargin = dp(8);
+        root.addView(langRow, langLp);
 
         // ---- actions (own scroll region; never pushed around by the log) ----
         ScrollView actionsScroll = new ScrollView(this);
@@ -336,6 +384,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(170)));
 
         setContentView(root);
+        initLanguages();
         refreshStatus();
 
         try {
@@ -482,7 +531,20 @@ public class MainActivity extends Activity {
             boolean connected = isConnected();
             boolean installed = isShizukuInstalled();
             File patch = localPatch();
-            boolean havePatch = patch != null && patch.exists();
+            boolean fileThere = patch != null && patch.exists();
+            PatchLanguage lang = selectedLanguage();
+            String staged = stagedLangCode();
+            boolean customFile = STAGED_CUSTOM.equals(staged);
+            // A staged file of another language must not be applied by mistake.
+            boolean havePatch = fileThere && (customFile || staged.equals(lang.code));
+
+            // Language picker: hidden while only English is published.
+            langRow.setVisibility(languages.size() > 1 ? View.VISIBLE : View.GONE);
+            langRow.setEnabled(!busy);
+            langRow.setAlpha(busy ? 0.5f : 1f);
+            langValue.setText(lang.name + "  ▾");
+            langHint.setText(lang.downloadable() ? "" : "No ready-made download yet: use Auto-patch");
+            langHint.setVisibility(lang.downloadable() ? View.GONE : View.VISIBLE);
 
             // Shizuku helpers: connected -> none; installed -> one "Open Shizuku";
             // not installed -> both store buttons.
@@ -490,8 +552,10 @@ public class MainActivity extends Activity {
             shizukuBtn.setText(installed ? "Open Shizuku" : "Get Shizuku (Play Store)");
             shizukuGithubBtn.setVisibility(!connected && !installed ? View.VISIBLE : View.GONE);
 
+            applyBtn.setText(customFile && fileThere ? "Apply chosen file"
+                    : lang.isDefault() ? "Apply English patch" : "Apply patch · " + lang.name);
             applyBtn.setEnabled(!busy && connected && havePatch);
-            downloadBtn.setEnabled(!busy);
+            downloadBtn.setEnabled(!busy && lang.downloadable());
             pickBtn.setEnabled(!busy);
             resetBtn.setEnabled(!busy && connected);
             autoBtn.setEnabled(!busy && connected);
@@ -509,7 +573,14 @@ public class MainActivity extends Activity {
             } else if (doneLabel != null) {
                 setStatus(C_OK, doneLabel, "Launch the game. Re-apply after each game update.");
             } else if (havePatch) {
-                setStatus(C_OK, "Ready — tap Apply", "Patch file: " + fmtBytes(patch.length()));
+                setStatus(C_OK, "Ready — tap Apply", "Patch file: "
+                        + (customFile ? "chosen file" : lang.name) + ", " + fmtBytes(patch.length()));
+            } else if (!lang.downloadable()) {
+                setStatus(C_WARN, "No " + lang.name + " download yet",
+                        "Use Auto-patch (beta) to build it on this phone.");
+            } else if (fileThere) {
+                setStatus(C_WARN, "No " + lang.name + " patch file yet",
+                        "Download it, or switch the patch language back.");
             } else {
                 setStatus(C_WARN, "No patch file yet", "Download the latest patch or choose a __data file.");
             }
@@ -530,6 +601,84 @@ public class MainActivity extends Activity {
 
     private void end() {
         setBusy(false);
+    }
+
+    // ---------------- patch languages ----------------
+
+    private android.content.SharedPreferences prefs() {
+        return getSharedPreferences(PREFS, MODE_PRIVATE);
+    }
+
+    /** The picked language while it's published, else English. The pick itself
+     *  is kept, so it comes back once the release lists it again. */
+    private PatchLanguage selectedLanguage() {
+        List<PatchLanguage> langs = languages;
+        PatchLanguage l = PatchLanguage.find(langs,
+                prefs().getString(PREF_LANG, PatchLanguage.DEFAULT_CODE));
+        if (l == null) l = PatchLanguage.find(langs, PatchLanguage.DEFAULT_CODE);
+        return l != null ? l : PatchLanguage.english(new java.util.HashMap<>());
+    }
+
+    /** Language of the staged __data. Before languages existed it was always English. */
+    private String stagedLangCode() {
+        return prefs().getString(PREF_STAGED_LANG, PatchLanguage.DEFAULT_CODE);
+    }
+
+    private void setStagedLang(String code) {
+        if (code == null) prefs().edit().remove(PREF_STAGED_LANG).apply();
+        else prefs().edit().putString(PREF_STAGED_LANG, code).apply();
+    }
+
+    /** Parse + save a fetched version.json and refresh the language list from it. */
+    private Map<String, Object> saveVersion(String vj) throws Exception {
+        Map<String, Object> v = JsonMap.parseObject(vj);
+        writeSmall(versionFile(), vj);
+        languages = PatchLanguage.fromVersion(v);
+        refreshStatus();
+        return v;
+    }
+
+    /** Saved version.json first (instant, works offline), then a quiet refresh. */
+    private void initLanguages() {
+        try {
+            if (versionFile().exists()) {
+                languages = PatchLanguage.fromVersion(JsonMap.parseObject(readSmall(versionFile())));
+            }
+        } catch (Throwable ignored) {
+        }
+        new Thread(() -> {
+            try {
+                saveVersion(Downloader.fetchString(VERSION_URL, s -> {}));
+            } catch (Throwable ignored) {
+                // offline: keep the saved list
+            }
+        }, "languages").start();
+    }
+
+    private void showLanguagePicker() {
+        List<PatchLanguage> langs = languages;
+        if (busy || langs.size() < 2) return;
+        String current = selectedLanguage().code;
+        String[] labels = new String[langs.size()];
+        int checked = 0;
+        for (int i = 0; i < langs.size(); i++) {
+            PatchLanguage l = langs.get(i);
+            labels[i] = l.downloadable() ? l.name : l.name + "  (Auto-patch only)";
+            if (l.code.equals(current)) checked = i;
+        }
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle("Patch language")
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    PatchLanguage l = langs.get(which);
+                    d.dismiss();
+                    if (l.code.equals(current)) return;
+                    prefs().edit().putString(PREF_LANG, l.code).apply();
+                    doneLabel = null;
+                    log("Patch language: " + l.name + ".");
+                    refreshStatus();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     // ---------------- view helpers ----------------
@@ -817,7 +966,8 @@ public class MainActivity extends Activity {
                     total += n;
                 }
                 out.flush();
-                long want = expectedPatchSize();
+                setStagedLang(STAGED_CUSTOM);
+                long want = expectedPatchSize(selectedLanguage());
                 if (total != want) {
                     log("Staged __data: " + fmtBytes(total) + " — expected " + fmtBytes(want)
                             + ". Make sure it's the right file.");
@@ -846,8 +996,13 @@ public class MainActivity extends Activity {
                 log("No patch file. Download it or choose a __data file.");
                 return;
             }
+            String stagedCode = stagedLangCode();
+            PatchLanguage stagedLang = STAGED_CUSTOM.equals(stagedCode)
+                    ? null : PatchLanguage.find(languages, stagedCode);
+            String what = STAGED_CUSTOM.equals(stagedCode) ? "Chosen patch"
+                    : (stagedLang != null ? stagedLang.name : "English") + " patch";
             long len = src.length();
-            long want = expectedPatchSize();
+            long want = expectedPatchSize(stagedLang != null ? stagedLang : selectedLanguage());
             if (len != want) {
                 log("Note: patch is " + fmtBytes(len) + ", expected " + fmtBytes(want) + " (continuing).");
             }
@@ -881,7 +1036,7 @@ public class MainActivity extends Activity {
             }
 
             if (okCount > 0) {
-                log("✓ English patch installed to " + okCount
+                log("✓ " + what + " installed to " + okCount
                         + (okCount == 1 ? " cache location (" : " cache locations (")
                         + fmtBytes(len) + (okCount == 1 ? ")." : " each)."));
                 log("Launch the game. Re-apply after each game update.");
@@ -920,6 +1075,7 @@ public class MainActivity extends Activity {
                 // also drop our staged patch so a stale __data isn't reapplied later
                 File staged = stagedPatch();
                 boolean cleared = staged != null && staged.exists() && staged.delete();
+                if (cleared) setStagedLang(null);
                 log(del > 0
                         ? "Deleted " + del + " language pack(s)" + (cleared ? " and the staged patch" : "")
                                 + ". The game re-downloads Japanese on next launch."
@@ -961,17 +1117,25 @@ public class MainActivity extends Activity {
 
     // ---------------- helpers: small files, md5 ----------------
 
-    private File cacheFile() {
+    private File appFile(String name) {
         File dir = getExternalFilesDir(null);
-        return dir == null ? new File(getFilesDir(), "translation_cache.json")
-                : new File(dir, "translation_cache.json");
+        return dir == null ? new File(getFilesDir(), name) : new File(dir, name);
     }
 
-    /** Release stamp (built_at|patch_md5) of the version.json the cache came from. */
-    private File cacheStampFile() {
-        File dir = getExternalFilesDir(null);
-        return dir == null ? new File(getFilesDir(), "translation_cache.stamp")
-                : new File(dir, "translation_cache.stamp");
+    /** translation_cache.json (English) or translation_cache.<code>.json. */
+    private File cacheFile(PatchLanguage lang) {
+        return appFile(lang.isDefault() ? "translation_cache.json"
+                : "translation_cache." + lang.code + ".json");
+    }
+
+    /** Release stamp (PatchLanguage.cacheStamp) of the cache we hold for a language. */
+    private File cacheStampFile(PatchLanguage lang) {
+        return appFile(lang.isDefault() ? "translation_cache.stamp"
+                : "translation_cache." + lang.code + ".stamp");
+    }
+
+    private String cacheUrl(PatchLanguage lang) {
+        return lang.isDefault() ? CACHE_URL : RELEASE_BASE + lang.cacheAsset;
     }
 
     private File versionFile() {
@@ -980,34 +1144,18 @@ public class MainActivity extends Activity {
                 : new File(dir, "version.json");
     }
 
-    /** Expected patch size: the live patch_size from the saved version.json when
-     *  available, else the baked default. Keeps the "size != expected" warnings
+    /** Expected patch size: the language's live patch_size from version.json when
+     *  published, else the baked default. Keeps the "size != expected" warnings
      *  correct across game updates without shipping a new APK. */
-    private long expectedPatchSize() {
-        try {
-            if (versionFile().exists()) {
-                Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
-                long s = Long.parseLong(v.getOrDefault("patch_size", "0"));
-                if (s > 0) return s;
-            }
-        } catch (Throwable ignored) {}
-        return DEFAULT_EXPECTED_SIZE;
+    private long expectedPatchSize(PatchLanguage lang) {
+        return lang.patchSize > 0 ? lang.patchSize : DEFAULT_EXPECTED_SIZE;
     }
 
-    /** Identity of a release, or null if version.json carries neither field. */
-    private static String releaseStamp(Map<String, String> v) {
-        if (v == null) return null;
-        String built = v.getOrDefault("built_at", "");
-        String md5 = v.getOrDefault("patch_md5", "");
-        if (built.isEmpty() && md5.isEmpty()) return null;
-        return built + "|" + md5;
-    }
-
-    private void writeCacheStamp(Map<String, String> v) {
-        String stamp = releaseStamp(v);
+    private void writeCacheStamp(PatchLanguage lang) {
+        String stamp = lang.cacheStamp();
         if (stamp == null) return;
         try {
-            writeSmall(cacheStampFile(), stamp);
+            writeSmall(cacheStampFile(lang), stamp);
         } catch (Throwable ignored) {}
     }
 
@@ -1041,12 +1189,17 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 section("Download");
-                String vj = Downloader.fetchString(VERSION_URL, s -> {});
-                Map<String, String> v = JsonMap.parseFlat(vj);
-                writeSmall(versionFile(), vj);
-                long wantSize = Long.parseLong(v.getOrDefault("patch_size", "0"));
-                String wantMd5 = v.getOrDefault("patch_md5", "");
-                log("Latest patch: " + fmtBytes(wantSize) + ", built " + v.getOrDefault("built_at", "?") + ".");
+                saveVersion(Downloader.fetchString(VERSION_URL, s -> {}));
+                PatchLanguage lang = selectedLanguage();
+                if (!lang.downloadable()) {
+                    log("No ready-made " + lang.name + " patch for this game version yet.\n"
+                            + "Use Auto-patch (beta) to build it on this phone.");
+                    return;
+                }
+                long wantSize = lang.patchSize;
+                String wantMd5 = lang.patchMd5;
+                log("Latest " + lang.name + " patch: " + fmtBytes(wantSize) + ", built "
+                        + (lang.builtAt.isEmpty() ? "?" : lang.builtAt) + ".");
                 // Cross-check against the live bundle on the device: if the game
                 // updated since this patch was built, the sizes won't match and
                 // the downloadable patch is the WRONG version for this game.
@@ -1058,23 +1211,26 @@ public class MainActivity extends Activity {
                 }
                 File staged = stagedPatch();
                 if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
+                    setStagedLang(lang.code);
                     log("Already up to date.");
                 } else {
-                    Downloader.fetchToFile(DATA_URL, staged, s -> {});
+                    Downloader.fetchToFile(lang.isDefault() ? DATA_URL : RELEASE_BASE + lang.patchAsset,
+                            staged, s -> {});
                     String got = md5Of(staged);
-                    if (!wantMd5.equalsIgnoreCase(got)) {
-                        log("✗ Download corrupted (md5 mismatch). Try again.");
+                    boolean badSize = wantSize > 0 && staged.length() != wantSize;
+                    if (!wantMd5.equalsIgnoreCase(got) || badSize) {
+                        // never leave a corrupt file staged under a language label
+                        staged.delete();
+                        setStagedLang(null);
+                        log("✗ Download corrupted (" + (badSize ? "size" : "md5") + " mismatch). Try again.");
                         return;
                     }
-                    if (wantSize > 0 && staged.length() != wantSize) {
-                        log("✗ Download corrupted (size mismatch). Try again.");
-                        return;
-                    }
-                    log("✓ Patch downloaded and verified.");
+                    setStagedLang(lang.code);
+                    log("✓ " + lang.name + " patch downloaded and verified.");
                 }
                 try {
-                    Downloader.fetchToFile(CACHE_URL, cacheFile(), s -> {});
-                    writeCacheStamp(v);
+                    Downloader.fetchToFile(cacheUrl(lang), cacheFile(lang), s -> {});
+                    writeCacheStamp(lang);
                 } catch (Throwable t) {
                     log("⚠ Translation cache not refreshed (" + t.getMessage() + ").");
                 }
@@ -1122,39 +1278,36 @@ public class MainActivity extends Activity {
     }
 
     /** Fresh version.json when online (saved for later), else the saved copy, else null. */
-    private Map<String, String> loadReleaseInfo() {
+    private Map<String, Object> loadReleaseInfo() {
         try {
-            String vj = Downloader.fetchString(VERSION_URL, s -> {});
-            Map<String, String> v = JsonMap.parseFlat(vj);
-            writeSmall(versionFile(), vj);
-            return v;
+            return saveVersion(Downloader.fetchString(VERSION_URL, s -> {}));
         } catch (Throwable ignored) {
         }
         try {
             if (versionFile().exists()) {
                 log("Offline — using the saved release info.");
-                return JsonMap.parseFlat(readSmall(versionFile()));
+                return JsonMap.parseObject(readSmall(versionFile()));
             }
         } catch (Throwable ignored) {
         }
         return null;
     }
 
-    /** Re-download translation_cache.json when it's missing or was fetched for an
-     *  older release than the one version.json now reports. */
-    private void ensureFreshCache(Map<String, String> v) throws AutoPatchFail {
-        File cf = cacheFile();
-        String want = releaseStamp(v);
+    /** Re-download the language's translation cache when it's missing or was
+     *  fetched for an older release than the one version.json now reports. */
+    private void ensureFreshCache(PatchLanguage lang) throws AutoPatchFail {
+        File cf = cacheFile(lang);
+        String want = lang.cacheStamp();
         String have = "";
         try {
-            if (cacheStampFile().exists()) have = readSmall(cacheStampFile()).trim();
+            if (cacheStampFile(lang).exists()) have = readSmall(cacheStampFile(lang)).trim();
         } catch (Throwable ignored) {
         }
         boolean existed = cf.exists();
         if (existed && (want == null || want.equals(have))) return;
         try {
-            Downloader.fetchToFile(CACHE_URL, cf, s -> {});
-            writeCacheStamp(v);
+            Downloader.fetchToFile(cacheUrl(lang), cf, s -> {});
+            writeCacheStamp(lang);
             log(existed ? "Translation cache updated to the latest release." : "Translation cache downloaded.");
         } catch (Throwable t) {
             if (existed) {
@@ -1202,13 +1355,15 @@ public class MainActivity extends Activity {
 
         // 3. AES keys from the game's own metadata. Offsets come from the live
         // version.json; the baked fallback goes stale with every game update.
-        Map<String, String> v = loadReleaseInfo();
+        Map<String, Object> v = loadReleaseInfo();
+        PatchLanguage lang = selectedLanguage();
+        log("Language: " + lang.name + ".");
         int keyOff = FALLBACK_KEY_OFF, ivOff = FALLBACK_IV_OFF;
         boolean liveOffsets = false;
         if (v != null && v.containsKey("meta_key_off") && v.containsKey("meta_iv_off")) {
             try {
-                keyOff = Long.decode(v.get("meta_key_off")).intValue();
-                ivOff = Long.decode(v.get("meta_iv_off")).intValue();
+                keyOff = Long.decode(String.valueOf(v.get("meta_key_off")).trim()).intValue();
+                ivOff = Long.decode(String.valueOf(v.get("meta_iv_off")).trim()).intValue();
                 liveOffsets = true;
             } catch (Throwable ignored) {
                 keyOff = FALLBACK_KEY_OFF;
@@ -1231,8 +1386,8 @@ public class MainActivity extends Activity {
         }
 
         // 4. translation cache (refreshed whenever the release is newer)
-        ensureFreshCache(v);
-        Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile()));
+        ensureFreshCache(lang);
+        Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile(lang)));
         @SuppressWarnings("unchecked")
         Map<String, Object> cacheRaw = (Map<String, Object>) pl.get("cache");
         if (cacheRaw == null) throw new AutoPatchFail("translation cache is malformed — retry while online.");
@@ -1297,6 +1452,6 @@ public class MainActivity extends Activity {
         }
         log("✓ Auto-patch installed to " + dests.size()
                 + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");
-        doneLabel = "Auto-patch installed";
+        doneLabel = lang.isDefault() ? "Auto-patch installed" : lang.name + " auto-patch installed";
     }
 }

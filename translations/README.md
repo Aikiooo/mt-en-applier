@@ -111,3 +111,30 @@ powershell -File tools\translations\split_translation_cache.ps1 -Cache tc.es.jso
 Release artifact names: the default locale keeps `translation_cache.json`; others are
 `translation_cache.<locale>.json`. The live download stays at
 [`patch-latest`](https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/translation_cache.json).
+
+### Publishing a language to the app
+
+The Android app lists a language only once the release's `version.json` names it
+under a `locales` block. `Publish-Locale.ps1` builds the cache, merges that block
+(every other key is left alone) and, with `-Publish`, uploads the assets first and
+`version.json` last:
+
+```powershell
+# Auto-patch only: ships translation_cache.es.json; the phone builds the bundle
+powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Publish
+
+# also offer Download: attach a ready-made __data.es built for the current game build
+powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PatchFile path\to\__data_es -Stock path\to\android_stock -Publish
+
+# withdraw a language from the app
+powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Publish
+```
+
+- It refuses a locale with nothing translated yet (`-Force` overrides).
+- `-BuildPatch -Stock … -KeysJson …` builds `__data.<locale>` with the app's own
+  AutoPatcher. That bundle is **grown, not exact-size**; test it on a phone before
+  publishing.
+- The app hides a language's Download once the game updates (the patch's
+  `stock_md5` no longer matches the release's), leaving Auto-patch.
+- `update_translation.py` rewrites `version.json` on every English release, which
+  drops the `locales` block. Re-run `Publish-Locale.ps1` for each language afterwards.
