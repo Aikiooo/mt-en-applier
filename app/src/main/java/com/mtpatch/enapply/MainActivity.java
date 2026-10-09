@@ -5,19 +5,31 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.text.method.ScrollingMovementMethod;
+import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import com.mtpatch.enapply.core.AutoPatcher;
 import com.mtpatch.enapply.core.JsonMap;
@@ -51,6 +63,11 @@ public class MainActivity extends Activity {
      *  expectedPatchSize()), so size changes never require an app update. */
     private static final long DEFAULT_EXPECTED_SIZE = 1896110L;
 
+    /** Fallback only: the live meta_key_off / meta_iv_off come from version.json.
+     *  These move with game updates, so using them triggers a loud warning. */
+    private static final int FALLBACK_KEY_OFF = 0xBC3DF0;
+    private static final int FALLBACK_IV_OFF = 0xBC6870;
+
     private static final String GAME_PKG = "jp.gree_ent.mushoku";
     private static final String RELEASE_BASE =
             "https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/";
@@ -63,34 +80,62 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK_FILE = 1002;
     private static final String SHIZUKU_PKG = "moe.shizuku.privileged.api";
 
-    private TextView log;
-    private TextView statusText;
-    private android.graphics.drawable.GradientDrawable statusDot;
+    private static final String AUTO_PATCH_ADVICE =
+            "Use \"Download latest patch\" once a build is published for this game version.";
+
+    // ---------------- palette (dark) ----------------
+    private static final int C_BG = 0xFF121417;
+    private static final int C_SURFACE = 0xFF1C2026;
+    private static final int C_SURFACE_HI = 0xFF2A3038;
+    private static final int C_STROKE = 0xFF333A44;
+    private static final int C_TEXT = 0xFFE8EAED;
+    private static final int C_TEXT_DIM = 0xFF9AA0A6;
+    private static final int C_ACCENT = 0xFF4F8EF7;
+    private static final int C_DANGER = 0xFFEF6B6B;
+    private static final int C_DISABLED_BG = 0xFF23272D;
+    private static final int C_DISABLED_TEXT = 0xFF5F6670;
+    private static final int C_LOG_BG = 0xFF0B0D10;
+    private static final int C_LOG_TEXT = 0xFFB8C4CE;
+    private static final int C_OK = 0xFF4CAF50;
+    private static final int C_WARN = 0xFFFFB300;
+    private static final int C_ERR = 0xFFEF5350;
+
+    private static final int BTN_PRIMARY = 0, BTN_SECONDARY = 1, BTN_DANGER = 2, BTN_QUIET = 3;
+
+    private static final int LOG_MAX_LINES = 300;
+
+    private TextView logText;
+    private ScrollView logScroll;
+    private final ArrayDeque<String> logLines = new ArrayDeque<>();
+    private TextView statusText, statusHint;
+    private GradientDrawable statusDot;
     private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, shizukuGithubBtn, downloadBtn, autoBtn, resetBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
-    private IUserService service;
+    private volatile IUserService service;
 
     private Shizuku.UserServiceArgs serviceArgs;
+
+    /** One long-running operation at a time; all action buttons grey out while set. */
+    private volatile boolean busy = false;
+    /** Sticky status label after a successful install (null = none yet). */
+    private volatile String doneLabel = null;
 
     private final ServiceConnection connection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
-            log("Shizuku service connected.");
             if (binder != null && binder.pingBinder()) {
                 service = IUserService.Stub.asInterface(binder);
-                applyBtn.setEnabled(true);
-                refreshStatus();
             } else {
                 log("ERROR: dead binder from Shizuku service.");
             }
+            refreshStatus();
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            log("Shizuku user service disconnected (direct shell fallback stays available).");
+            // direct shell (newProcess) fallback stays available while shizukuReady
             service = null;
-            applyBtn.setEnabled(shizukuReady);
             refreshStatus();
         }
     };
@@ -101,10 +146,11 @@ public class MainActivity extends Activity {
                     if (grantResult == PackageManager.PERMISSION_GRANTED) {
                         log("Shizuku permission granted.");
                         shizukuReady = true;
-                        ui.post(() -> applyBtn.setEnabled(true));
+                        refreshStatus();
                         bindService();
                     } else {
-                        log("Shizuku permission DENIED. Reopen app to retry.");
+                        log("Shizuku permission denied. Reopen the app to retry.");
+                        refreshStatus();
                     }
                 }
             };
@@ -112,14 +158,12 @@ public class MainActivity extends Activity {
     /** Fires (possibly async) once the Shizuku server delivers its binder to our provider. */
     private final Shizuku.OnBinderReceivedListener binderReceivedListener = this::onShizukuReady;
     private final Shizuku.OnBinderDeadListener binderDeadListener = () -> {
-        log("Shizuku binder died (server stopped). Restart Shizuku and reopen the app."
-                + "\nIf this happens right after \"Binding Shizuku user service…\", the"
-                + " phone's phantom-process/task killer is killing Shizuku. Fixes:\n"
-                + "1. Battery settings: set Shizuku to \"No restrictions\".\n"
-                + "2. One-time, via a PC: adb shell settings put global"
-                + " settings_enable_monitor_phantom_procs false");
+        // Usually the phone's phantom-process/task killer killing Shizuku right
+        // after the UserService bind.
+        log("Shizuku stopped. Restart it, then reopen this app.\n"
+                + "If it keeps stopping: set Shizuku's battery use to \"No restrictions\", or once via PC:\n"
+                + "adb shell settings put global settings_enable_monitor_phantom_procs false");
         shizukuReady = false;
-        ui.post(() -> applyBtn.setEnabled(false));
         service = null;
         shizukuHandled = false;
         refreshStatus();
@@ -127,6 +171,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        setTheme(android.R.style.Theme_Material_NoActionBar);
         super.onCreate(savedInstanceState);
 
         serviceArgs = new Shizuku.UserServiceArgs(
@@ -136,63 +181,95 @@ public class MainActivity extends Activity {
                 .debuggable(false)
                 .version(1);
 
-        ScrollView sv = new ScrollView(this);
-        LinearLayout ll = new LinearLayout(this);
-        ll.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        ll.setPadding(pad, pad, pad, pad);
-        sv.addView(ll);
+        getWindow().setStatusBarColor(C_BG);
+        getWindow().setNavigationBarColor(C_BG);
+        getWindow().getDecorView().setBackgroundColor(C_BG);
 
+        int pad = dp(16);
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(C_BG);
+        root.setPadding(pad, pad, pad, pad);
+
+        // ---- header ----
         TextView title = new TextView(this);
-        title.setText("MT-EN Applier\nMushoku Tensei English patch installer");
-        title.setTextSize(18);
-        title.setPadding(0, 0, 0, pad / 2);
-        ll.addView(title);
+        title.setText("MT-EN Applier");
+        title.setTextSize(22);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(C_TEXT);
+        root.addView(title);
 
-        // Status row: colored dot + label (red = need Shizuku, yellow = need file, green = ready)
-        LinearLayout statusRow = new LinearLayout(this);
-        statusRow.setOrientation(LinearLayout.HORIZONTAL);
-        statusRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        statusRow.setPadding(0, 0, 0, pad / 2);
-        int dotSize = (int) (14 * getResources().getDisplayMetrics().density);
-        statusDot = new android.graphics.drawable.GradientDrawable();
-        statusDot.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        TextView subtitle = new TextView(this);
+        subtitle.setText("Unofficial English patch for Mushoku Tensei" + versionSuffix());
+        subtitle.setTextSize(13);
+        subtitle.setTextColor(C_TEXT_DIM);
+        subtitle.setPadding(0, dp(2), 0, dp(12));
+        root.addView(subtitle);
+
+        // ---- status card: colored dot + short label (tap for diagnostics) ----
+        LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.HORIZONTAL);
+        statusCard.setGravity(Gravity.CENTER_VERTICAL);
+        statusCard.setPadding(dp(14), dp(12), dp(14), dp(12));
+        statusCard.setBackground(new RippleDrawable(ColorStateList.valueOf(0x22FFFFFF),
+                rounded(C_SURFACE, C_STROKE, 12), null));
+        statusCard.setClickable(true);
+        statusCard.setOnClickListener(v -> runDiagnostics());
+
+        statusDot = new GradientDrawable();
+        statusDot.setShape(GradientDrawable.OVAL);
         View dotView = new View(this);
-        LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dotSize, dotSize);
-        dotLp.setMargins(0, 0, pad / 2, 0);
+        LinearLayout.LayoutParams dotLp = new LinearLayout.LayoutParams(dp(12), dp(12));
+        dotLp.setMargins(0, 0, dp(12), 0);
         dotView.setLayoutParams(dotLp);
         dotView.setBackground(statusDot);
-        statusRow.addView(dotView);
+        statusCard.addView(dotView);
+
+        LinearLayout statusTexts = new LinearLayout(this);
+        statusTexts.setOrientation(LinearLayout.VERTICAL);
         statusText = new TextView(this);
-        statusText.setTextSize(15);
-        statusRow.addView(statusText);
-        ll.addView(statusRow);
-        statusText.setOnClickListener(v -> runDiagnostics());
-        setStatus(0xFFD32F2F, "Waiting for Shizuku — install & start Shizuku, then reopen.");
+        statusText.setTextSize(16);
+        statusText.setTypeface(Typeface.DEFAULT_BOLD);
+        statusText.setTextColor(C_TEXT);
+        statusTexts.addView(statusText);
+        statusHint = new TextView(this);
+        statusHint.setTextSize(13);
+        statusHint.setTextColor(C_TEXT_DIM);
+        statusTexts.addView(statusHint);
+        statusCard.addView(statusTexts, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
-        log = new TextView(this);
-        log.setTextSize(13);
-        log.setMovementMethod(new ScrollingMovementMethod());
-        log.setPadding(0, 0, 0, pad);
-        ll.addView(log);
+        TextView diagLink = new TextView(this);
+        diagLink.setText("Diagnostics");
+        diagLink.setTextSize(12);
+        diagLink.setTextColor(C_TEXT_DIM);
+        diagLink.setPadding(dp(8), 0, 0, 0);
+        statusCard.addView(diagLink);
+        root.addView(statusCard);
 
-        shizukuBtn = new Button(this);
-        // Text is set immediately (not only via refreshStatus) so the button is
-        // never blank when the binder hasn't arrived yet.
-        shizukuBtn.setText("Get Shizuku (Play Store)");
-        shizukuBtn.setOnClickListener(v -> {
+        // ---- actions (own scroll region; never pushed around by the log) ----
+        ScrollView actionsScroll = new ScrollView(this);
+        actionsScroll.setVerticalScrollBarEnabled(false);
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
+        actions.setPadding(0, dp(4), 0, dp(12));
+        actionsScroll.addView(actions);
+        root.addView(actionsScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // Shizuku helpers: visibility/label driven by refreshStatus().
+        shizukuBtn = makeButton("Get Shizuku (Play Store)", BTN_SECONDARY, v -> {
             if (isShizukuInstalled()) {
                 Intent launch = getPackageManager().getLaunchIntentForPackage(SHIZUKU_PKG);
                 if (launch != null) startActivity(launch);
+                else log("Could not open Shizuku — launch it from your app drawer.");
             } else {
                 openShizukuStorePage();
             }
         });
-        ll.addView(shizukuBtn);
+        actions.addView(shizukuBtn);
 
-        shizukuGithubBtn = new Button(this);
-        shizukuGithubBtn.setText("Get Shizuku (GitHub)");
-        shizukuGithubBtn.setOnClickListener(v -> {
+        shizukuGithubBtn = makeButton("Get Shizuku (GitHub)", BTN_SECONDARY, v -> {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW,
                         Uri.parse("https://github.com/RikkaApps/Shizuku/releases")));
@@ -200,42 +277,66 @@ public class MainActivity extends Activity {
                 log("No browser found to open GitHub.");
             }
         });
-        ll.addView(shizukuGithubBtn);
+        actions.addView(shizukuGithubBtn);
 
-        pickBtn = new Button(this);
-        pickBtn.setText("Choose __data file…");
-        pickBtn.setOnClickListener(v -> openPicker());
-        ll.addView(pickBtn);
+        applyBtn = makeButton("Apply English patch", BTN_PRIMARY, v -> onApply());
+        actions.addView(applyBtn);
 
-        downloadBtn = new Button(this);
-        downloadBtn.setText("Download latest patch");
-        downloadBtn.setOnClickListener(v -> onDownload());
-        ll.addView(downloadBtn);
+        downloadBtn = makeButton("Download latest patch", BTN_SECONDARY, v -> onDownload());
+        actions.addView(downloadBtn);
 
-        autoBtn = new Button(this);
-        autoBtn.setText("Auto-patch after update (beta)");
-        autoBtn.setOnClickListener(v -> onAutoPatch());
-        ll.addView(autoBtn);
+        pickBtn = makeButton("Choose __data file…", BTN_SECONDARY, v -> openPicker());
+        actions.addView(pickBtn);
 
-        applyBtn = new Button(this);
-        applyBtn.setText("Apply English patch");
-        applyBtn.setEnabled(false);
-        applyBtn.setOnClickListener(v -> onApply());
-        ll.addView(applyBtn);
+        actions.addView(sectionCaption("Advanced"));
 
-        resetBtn = new Button(this);
-        resetBtn.setText("Delete all language packs (reset)");
-        resetBtn.setOnClickListener(v -> onResetLangPacks());
-        ll.addView(resetBtn);
+        resetBtn = makeButton("Delete all language packs (reset)", BTN_DANGER, v -> onResetLangPacks());
+        actions.addView(resetBtn);
 
-        uninstallBtn = new Button(this);
-        uninstallBtn.setText("Uninstall this app (needed again after each game update)");
-        uninstallBtn.setVisibility(View.GONE);
-        uninstallBtn.setOnClickListener(v -> startActivity(new Intent(
+        autoBtn = makeButton("Auto-patch after update (beta)", BTN_SECONDARY, v -> onAutoPatch());
+        actions.addView(autoBtn);
+
+        uninstallBtn = makeButton("Uninstall this app", BTN_QUIET, v -> startActivity(new Intent(
                 Intent.ACTION_DELETE, Uri.parse("package:" + getPackageName()))));
-        ll.addView(uninstallBtn);
+        uninstallBtn.setVisibility(View.GONE);
+        actions.addView(uninstallBtn);
 
-        setContentView(sv);
+        // ---- log: fixed-height, self-scrolling panel ----
+        LinearLayout logHeader = new LinearLayout(this);
+        logHeader.setOrientation(LinearLayout.HORIZONTAL);
+        logHeader.setGravity(Gravity.CENTER_VERTICAL);
+        logHeader.setPadding(0, 0, 0, dp(6));
+        TextView logTitle = captionText("Log");
+        logHeader.addView(logTitle, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView clearLog = new TextView(this);
+        clearLog.setText("Clear");
+        clearLog.setTextSize(13);
+        clearLog.setTextColor(C_ACCENT);
+        clearLog.setPadding(dp(12), dp(4), 0, dp(4));
+        clearLog.setOnClickListener(v -> {
+            logLines.clear();
+            logText.setText("");
+        });
+        logHeader.addView(clearLog);
+        root.addView(logHeader);
+
+        logScroll = new ScrollView(this);
+        logScroll.setBackground(rounded(C_LOG_BG, C_STROKE, 10));
+        logScroll.setScrollBarStyle(View.SCROLLBARS_INSIDE_OVERLAY);
+        logText = new TextView(this);
+        logText.setTextSize(12);
+        logText.setTypeface(Typeface.MONOSPACE);
+        logText.setTextColor(C_LOG_TEXT);
+        logText.setLineSpacing(0, 1.1f);
+        logText.setPadding(dp(10), dp(8), dp(10), dp(8));
+        logText.setTextIsSelectable(true);
+        logScroll.addView(logText);
+        root.addView(logScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(170)));
+
+        setContentView(root);
+        refreshStatus();
 
         try {
             Shizuku.addRequestPermissionResultListener(permListener);
@@ -250,9 +351,16 @@ public class MainActivity extends Activity {
         if (Shizuku.pingBinder()) {
             onShizukuReady();
         } else {
-            log("Waiting for Shizuku…\n(Install Shizuku, start it, then reopen this app.)");
+            log("Waiting for Shizuku…");
             startDiagnostics();
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Shizuku may have been installed/started, or __data dropped in, meanwhile.
+        refreshStatus();
     }
 
     private int pollCount = 0;
@@ -271,9 +379,9 @@ public class MainActivity extends Activity {
                 if (pollCount < 30) {
                     ui.postDelayed(this, 1000);
                 } else {
-                    log("\nShizuku is not running (or this app is not authorized).\n"
-                            + "1. Install Shizuku from the Play Store or GitHub (RikkaApps/Shizuku) and start it.\n"
-                            + "2. Reopen this app and allow the Shizuku permission prompt.");
+                    log("Shizuku not detected. Install and start it, then reopen this app"
+                            + " and allow the permission prompt.");
+                    refreshStatus();
                 }
             }
         }, 1000);
@@ -291,10 +399,10 @@ public class MainActivity extends Activity {
         super.onDestroy();
     }
 
-    private boolean shizukuHandled = false;
+    private volatile boolean shizukuHandled = false;
     /** True when the Shizuku server binder is alive + permission granted — enough
      *  for the newProcess shell path even if bindUserService keeps failing. */
-    private boolean shizukuReady = false;
+    private volatile boolean shizukuReady = false;
 
     /** Called once the Shizuku binder is available. Drives permission -> bind.
      *  Guarded: both the sticky listener and the direct ping may fire it. */
@@ -306,63 +414,223 @@ public class MainActivity extends Activity {
             ver = Shizuku.getVersion();
         } catch (Throwable ignored) {
         }
-        log("Shizuku connected. API version: " + ver);
 
         if (Shizuku.isPreV11() || (ver != -1 && ver < 11)) {
-            log("ERROR: Shizuku v11+ required. Please update Shizuku.");
+            log("ERROR: Shizuku v11+ required (found v" + ver + "). Please update Shizuku.");
+            refreshStatus();
             return;
         }
 
         if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-            log("Shizuku permission already granted.");
+            log("Shizuku connected (API v" + ver + ").");
             shizukuReady = true;
-            ui.post(() -> applyBtn.setEnabled(true));
+            refreshStatus();
             bindService();
         } else {
             log("Requesting Shizuku permission…");
+            refreshStatus();
             Shizuku.requestPermission(REQ_SHIZUKU);
         }
     }
 
+    // ---------------- log panel ----------------
+
+    /** Append to the bounded log panel (thread-safe). Blank lines are dropped. */
     private void log(String s) {
-        ui.post(() -> log.append(s + "\n"));
+        ui.post(() -> appendLog(s));
     }
 
-    private void setStatus(int color, String text) {
-        ui.post(() -> {
-            statusDot.setColor(color);
-            statusText.setText(text);
-        });
+    private void section(String name) {
+        log("— " + name + " —");
     }
 
-    /** Recompute the status light and the Shizuku helper buttons from current state. */
+    private void appendLog(String s) {
+        boolean follow = isLogAtBottom();
+        for (String line : s.split("\n")) {
+            if (line.trim().isEmpty()) continue;
+            logLines.addLast(line);
+        }
+        while (logLines.size() > LOG_MAX_LINES) logLines.removeFirst();
+        logText.setText(String.join("\n", logLines));
+        // Follow new output only if the user hasn't scrolled up to read.
+        if (follow) logScroll.post(() -> logScroll.scrollTo(0, logText.getHeight()));
+    }
+
+    private boolean isLogAtBottom() {
+        int viewport = logScroll.getHeight();
+        if (viewport == 0) return true;
+        return logText.getHeight() - (logScroll.getScrollY() + viewport) <= dp(24);
+    }
+
+    // ---------------- status + button state ----------------
+
+    private void setStatus(int color, String label, String hint) {
+        statusDot.setColor(color);
+        statusText.setText(label);
+        statusHint.setText(hint);
+        statusHint.setVisibility(hint == null || hint.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private boolean isConnected() {
+        return service != null || shizukuReady;
+    }
+
+    /** Recompute the status light, button enablement and the Shizuku helper
+     *  buttons from current state. Safe to call from any thread. */
     private void refreshStatus() {
         ui.post(() -> {
-            if (service == null) {
-                if (isShizukuInstalled()) {
-                    shizukuBtn.setText("Open Shizuku & tap Start");
-                    shizukuGithubBtn.setVisibility(View.GONE);
+            boolean connected = isConnected();
+            boolean installed = isShizukuInstalled();
+            File patch = localPatch();
+            boolean havePatch = patch != null && patch.exists();
+
+            // Shizuku helpers: connected -> none; installed -> one "Open Shizuku";
+            // not installed -> both store buttons.
+            shizukuBtn.setVisibility(connected ? View.GONE : View.VISIBLE);
+            shizukuBtn.setText(installed ? "Open Shizuku" : "Get Shizuku (Play Store)");
+            shizukuGithubBtn.setVisibility(!connected && !installed ? View.VISIBLE : View.GONE);
+
+            applyBtn.setEnabled(!busy && connected && havePatch);
+            downloadBtn.setEnabled(!busy);
+            pickBtn.setEnabled(!busy);
+            resetBtn.setEnabled(!busy && connected);
+            autoBtn.setEnabled(!busy && connected);
+
+            if (!connected) {
+                if (!installed) {
+                    setStatus(C_ERR, "Shizuku not installed", "Get it below, start it, then reopen this app.");
+                } else if (Shizuku.pingBinder()) {
+                    setStatus(C_WARN, "Shizuku permission needed", "Allow the prompt, or reopen this app.");
                 } else {
-                    shizukuBtn.setText("Get Shizuku (Play Store)");
-                    shizukuGithubBtn.setText("Get Shizuku (GitHub)");
-                    shizukuGithubBtn.setVisibility(View.VISIBLE);
+                    setStatus(C_ERR, "Shizuku not running", "Open Shizuku and tap Start.");
                 }
-                shizukuBtn.setVisibility(View.VISIBLE);
+            } else if (busy) {
+                setStatus(C_WARN, "Working…", "See the log below.");
+            } else if (doneLabel != null) {
+                setStatus(C_OK, doneLabel, "Launch the game. Re-apply after each game update.");
+            } else if (havePatch) {
+                setStatus(C_OK, "Ready — tap Apply", "Patch file: " + fmtBytes(patch.length()));
             } else {
-                shizukuBtn.setVisibility(View.GONE);
-                shizukuGithubBtn.setVisibility(View.GONE);
+                setStatus(C_WARN, "No patch file yet", "Download the latest patch or choose a __data file.");
             }
         });
-        if (service == null) {
-            setStatus(0xFFD32F2F, isShizukuInstalled()
-                    ? "Shizuku is installed but not running — open it and tap Start."
-                    : "Shizuku is not installed — get it from the Play Store or GitHub (buttons below).");
-        } else if (localPatch() != null && localPatch().exists()) {
-            setStatus(0xFF388E3C, "Ready — tap \"Apply English patch\".");
-        } else {
-            setStatus(0xFFF9A825, "Shizuku connected — now choose the __data file below.");
+    }
+
+    private void setBusy(boolean b) {
+        busy = b;
+        refreshStatus();
+    }
+
+    /** Claim the busy flag on the UI thread; false if another operation is running. */
+    private boolean tryBegin() {
+        if (busy) return false;
+        setBusy(true);
+        return true;
+    }
+
+    private void end() {
+        setBusy(false);
+    }
+
+    // ---------------- view helpers ----------------
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private String versionSuffix() {
+        try {
+            return " · v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Throwable t) {
+            return "";
         }
     }
+
+    private GradientDrawable rounded(int fill, int stroke, int radiusDp) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setCornerRadius(dp(radiusDp));
+        if (stroke != 0) d.setStroke(dp(1), stroke);
+        return d;
+    }
+
+    private TextView captionText(String text) {
+        TextView t = new TextView(this);
+        t.setText(text.toUpperCase(Locale.US));
+        t.setTextSize(12);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setLetterSpacing(0.08f);
+        t.setTextColor(C_TEXT_DIM);
+        return t;
+    }
+
+    private TextView sectionCaption(String text) {
+        TextView t = captionText(text);
+        t.setPadding(dp(2), dp(20), 0, dp(2));
+        return t;
+    }
+
+    /** Flat, dark-theme button whose disabled state is visibly greyed out. */
+    private Button makeButton(String text, int style, View.OnClickListener onClick) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setStateListAnimator(null);
+        b.setOnClickListener(onClick);
+        b.setGravity(Gravity.CENTER);
+        b.setPadding(dp(16), dp(10), dp(16), dp(10));
+
+        int fill, stroke, textColor, height;
+        switch (style) {
+            case BTN_PRIMARY:
+                fill = C_ACCENT; stroke = 0; textColor = 0xFFFFFFFF; height = 56;
+                b.setTextSize(17);
+                b.setTypeface(Typeface.DEFAULT_BOLD);
+                break;
+            case BTN_DANGER:
+                fill = C_SURFACE; stroke = C_STROKE; textColor = C_DANGER; height = 48;
+                b.setTextSize(15);
+                break;
+            case BTN_QUIET:
+                fill = 0x00000000; stroke = 0; textColor = C_TEXT_DIM; height = 44;
+                b.setTextSize(14);
+                break;
+            default:
+                fill = C_SURFACE_HI; stroke = 0; textColor = C_TEXT; height = 48;
+                b.setTextSize(15);
+                break;
+        }
+
+        StateListDrawable bg = new StateListDrawable();
+        bg.addState(new int[]{-android.R.attr.state_enabled},
+                rounded(style == BTN_QUIET ? 0x00000000 : C_DISABLED_BG, 0, 10));
+        bg.addState(new int[]{}, rounded(fill, stroke, 10));
+        Drawable mask = rounded(0xFFFFFFFF, 0, 10);
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), bg, mask));
+        b.setTextColor(new ColorStateList(
+                new int[][]{{-android.R.attr.state_enabled}, {}},
+                new int[]{C_DISABLED_TEXT, textColor}));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(height));
+        lp.topMargin = dp(style == BTN_PRIMARY ? 12 : 8);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private static String fmtBytes(long n) {
+        return String.format(Locale.US, "%,d B", n);
+    }
+
+    /** "…/<hash8>…" for a UnityCache __data path; keeps the log on one line. */
+    private static String shortPath(String dest) {
+        String[] p = dest.split("/");
+        String hash = p.length >= 2 ? p[p.length - 2] : dest;
+        if (hash.length() > 8) hash = hash.substring(0, 8) + "…";
+        return (dest.contains("/il2cpp/") ? "il2cpp/" : "") + hash;
+    }
+
+    // ---------------- Shizuku ----------------
 
     private boolean isShizukuInstalled() {
         try {
@@ -385,17 +653,123 @@ public class MainActivity extends Activity {
     }
 
     private void bindService() {
-        log("Binding Shizuku user service…");
         try {
             Shizuku.bindUserService(serviceArgs, connection);
         } catch (Throwable t) {
-            log("ERROR binding service: " + t.getMessage());
+            log("ERROR binding Shizuku service: " + t.getMessage());
         }
     }
 
+    // ---------------- shell ----------------
+
+    /** Parsed exec result. Both ShellRunner.exec and UserService.exec return
+     *  "exit=N\n" + stdout + "[stderr]\n" + stderr (or "exec_error=..."). */
+    private static final class ShellResult {
+        final int code;
+        final String out;
+        final String err;
+
+        private ShellResult(int code, String out, String err) {
+            this.code = code;
+            this.out = out;
+            this.err = err;
+        }
+
+        static ShellResult parse(String raw) {
+            if (raw == null) return new ShellResult(-1, "", "no output");
+            if (raw.startsWith("exec_error=")) {
+                return new ShellResult(-1, "", raw.substring("exec_error=".length()).trim());
+            }
+            int code = -1;
+            String rest = raw;
+            if (raw.startsWith("exit=")) {
+                int nl = raw.indexOf('\n');
+                String num = nl < 0 ? raw.substring(5) : raw.substring(5, nl);
+                try {
+                    code = Integer.parseInt(num.trim());
+                } catch (NumberFormatException ignored) {
+                }
+                rest = nl < 0 ? "" : raw.substring(nl + 1);
+            }
+            String out = rest, err = "";
+            int m = rest.startsWith("[stderr]\n") ? 0 : rest.indexOf("\n[stderr]\n");
+            if (m >= 0) {
+                int cut = m == 0 ? 0 : m + 1;
+                out = rest.substring(0, cut);
+                err = rest.substring(cut + "[stderr]\n".length());
+            }
+            return new ShellResult(code, out.trim(), err.trim());
+        }
+
+        String firstLine() {
+            int nl = out.indexOf('\n');
+            return (nl < 0 ? out : out.substring(0, nl)).trim();
+        }
+
+        /** " (reason)" for failure messages: first stderr line, else the exit code. */
+        String reason() {
+            if (!err.isEmpty()) {
+                int nl = err.indexOf('\n');
+                return " (" + (nl < 0 ? err : err.substring(0, nl)) + ")";
+            }
+            return code > 0 ? " (exit " + code + ")" : "";
+        }
+    }
+
+    /** Run a command as the Shizuku (shell) uid: persistent UserService when
+     *  bound, otherwise the one-shot newProcess path (for devices where the
+     *  server dies spawning a UserService). Same output contract. */
+    private String execShell(String cmd) throws android.os.RemoteException {
+        IUserService s = service;
+        if (s != null) return s.exec(cmd);
+        return ShellRunner.exec(cmd);
+    }
+
+    /** execShell + parse: exit code and clean stdout/stderr. Use this for
+     *  anything logged or parsed — never log a raw exec blob. */
+    private ShellResult shell(String cmd) throws android.os.RemoteException {
+        return ShellResult.parse(execShell(cmd));
+    }
+
+    /** Every live language-bundle copy on the device (may be empty). */
+    private List<String> findLiveBundles() throws android.os.RemoteException {
+        ShellResult found = shell(
+                "for f in " + GAME_CACHE_GLOB + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
+        List<String> dests = new ArrayList<>();
+        for (String line : found.out.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("FOUND:")) dests.add(line.substring(6));
+        }
+        return dests;
+    }
+
+    /** NEWEST live bundle (an old asset-hash folder may linger post-update), or null. */
+    private String newestLiveBundle() throws android.os.RemoteException {
+        String first = shell("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1").firstLine();
+        return first.startsWith("/sdcard/") ? first : null;
+    }
+
+    /** Size of a file on the device as seen by the shell uid, or -1. */
+    private long remoteSize(String path) throws android.os.RemoteException {
+        String sz = shell("stat -c %s '" + path + "' 2>/dev/null || wc -c < '" + path + "'").firstLine();
+        try {
+            return Long.parseLong(sz.trim());
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    // ---------------- apply ----------------
+
     private void onApply() {
-        applyBtn.setEnabled(false);
-        new Thread(this::doApply, "apply").start();
+        if (!tryBegin()) return;
+        new Thread(() -> {
+            try {
+                doApply();
+            } finally {
+                ui.post(this::end);
+            }
+        }, "apply").start();
     }
 
     /** The staged copy (from the file picker). Lives on /sdcard (our external
@@ -431,6 +805,7 @@ public class MainActivity extends Activity {
 
     /** Copy the picked file into our files dir (readable by the shell-uid service). */
     private void stageFile(Uri uri) {
+        if (!tryBegin()) return;
         new Thread(() -> {
             try (java.io.InputStream in = getContentResolver().openInputStream(uri);
                  java.io.FileOutputStream out = new java.io.FileOutputStream(stagedPatch())) {
@@ -442,111 +817,83 @@ public class MainActivity extends Activity {
                     total += n;
                 }
                 out.flush();
-                long size = total;
-                log("File staged (" + size + " bytes).");
-                refreshStatus();
                 long want = expectedPatchSize();
-                if (size != want) {
-                    log("WARNING: size != expected " + want + ". Make sure it's the right file.");
-                } else if (service != null) {
-                    log("Ready — tap \"Apply English patch\".");
+                if (total != want) {
+                    log("Staged __data: " + fmtBytes(total) + " — expected " + fmtBytes(want)
+                            + ". Make sure it's the right file.");
+                } else if (isConnected()) {
+                    log("Staged __data (" + fmtBytes(total) + ") — tap Apply.");
                 } else {
-                    log("File OK, but Shizuku is not connected yet — see the note above. "
-                            + "The file stays staged; just connect Shizuku and tap Apply.");
+                    log("Staged __data (" + fmtBytes(total) + "). Connect Shizuku, then tap Apply.");
                 }
             } catch (Throwable t) {
                 log("ERROR reading file: " + t.getMessage());
+            } finally {
+                ui.post(this::end);
             }
         }, "stage").start();
     }
 
-    /** Run a command as the Shizuku (shell) uid: persistent UserService when
-     *  bound, otherwise the one-shot newProcess path (for devices where the
-     *  server dies spawning a UserService). Same output contract. */
-    private String execShell(String cmd) throws android.os.RemoteException {
-        if (service != null) return service.exec(cmd);
-        return ShellRunner.exec(cmd);
-    }
-
     private void doApply() {
         try {
-            if (service == null && !shizukuReady) {
-                log("ERROR: Shizuku is not connected. Reopen the app.");
+            if (!isConnected()) {
+                log("Shizuku is not connected. Start Shizuku, then reopen the app.");
                 return;
             }
-            log("Shell path: " + (service != null ? "UserService" : "newProcess fallback"));
+            section("Apply");
             File src = localPatch();
-            log("\n— Applying —");
             if (src == null || !src.exists()) {
-                log("ERROR: __data not found.\nPlace the English __data file here (any file manager):\n  "
-                        + (src == null ? "(no external files dir)" : src.getAbsolutePath())
-                        + "\nThen tap Apply again.");
+                log("No patch file. Download it or choose a __data file.");
                 return;
             }
             long len = src.length();
-            log("Local __data size: " + len);
             long want = expectedPatchSize();
             if (len != want) {
-                log("WARNING: size != expected " + want + " (continuing anyway).");
+                log("Note: patch is " + fmtBytes(len) + ", expected " + fmtBytes(want) + " (continuing).");
             }
 
-            execShell("am force-stop jp.gree_ent.mushoku");
+            shell("am force-stop jp.gree_ent.mushoku");
 
             // The asset-hash subfolder changes on some game updates, so resolve
             // the live bundle path(s) at apply time and patch every copy found.
-            String found = execShell(
-                    "for f in " + GAME_CACHE_GLOB + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
-            java.util.List<String> dests = new java.util.ArrayList<>();
-            for (String line : found.split("\n")) {
-                line = line.trim();
-                if (line.startsWith("FOUND:")) dests.add(line.substring(6));
-            }
+            List<String> dests = findLiveBundles();
             boolean fallback = dests.isEmpty();
             if (fallback) {
-                log("No live bundle found via auto-detect; falling back to the known path.\n"
-                        + "If this fails, open the game once so it downloads its data.");
+                log("No live language pack found; trying the default path.");
                 dests.add(GAME_CACHE);
             }
 
-            boolean ok = false;
+            int okCount = 0;
             for (String dest : dests) {
-                log("Copying to game cache:\n  " + dest);
-                String r = execShell("cp '" + src.getAbsolutePath() + "' '" + dest + "' && echo CP_OK");
-                if (!r.contains("CP_OK")) {
-                    log("COPY FAILED for " + dest + "\n" + r);
+                ShellResult cp = shell("cp '" + src.getAbsolutePath() + "' '" + dest + "' && echo CP_OK");
+                if (!cp.out.contains("CP_OK")) {
+                    log("✗ " + shortPath(dest) + ": copy failed" + cp.reason());
                     continue;
                 }
-                execShell("chmod 0666 '" + dest + "' 2>/dev/null");
-
-                String sz = execShell("stat -c %s '" + dest + "' 2>/dev/null || wc -c < '" + dest + "'");
-                log("On-device size: " + sz.trim());
-                if (sz.contains(String.valueOf(len))) {
-                    ok = true;
+                shell("chmod 0666 '" + dest + "' 2>/dev/null");
+                long got = remoteSize(dest);
+                if (got == len) {
+                    okCount++;
                 } else {
-                    log("WARNING: size mismatch after copy to " + dest);
+                    log("✗ " + shortPath(dest) + ": size " + (got < 0 ? "unknown" : fmtBytes(got))
+                            + " after copy");
                 }
             }
 
-            if (!ok && fallback) {
-                log("COPY FAILED.\nIs the game installed and has it downloaded data once?\n"
-                        + "Check folder:\n" + GAME_CACHE);
-                return;
-            }
-
-            if (ok) {
-                log("\nSUCCESS — English patch installed.\nLaunch the game; menus/skills/story should be English."
-                        + "\n\nAfter a game update the Japanese file is re-downloaded, so you'll need"
-                        + " to run this patch again — keeping this app is recommended."
-                        + " (Uninstall below if you're sure.)");
-                setStatus(0xFF388E3C, "Patch installed! Launch the game.");
+            if (okCount > 0) {
+                log("✓ English patch installed to " + okCount
+                        + (okCount == 1 ? " cache location (" : " cache locations (")
+                        + fmtBytes(len) + (okCount == 1 ? ")." : " each)."));
+                log("Launch the game. Re-apply after each game update.");
+                doneLabel = "Patch installed";
                 ui.post(() -> uninstallBtn.setVisibility(View.VISIBLE));
+            } else if (fallback) {
+                log("✗ Copy failed. Is the game installed? Open it once so it downloads its data, then retry.");
             } else {
-                log("\nWARNING: size mismatch after copy. Retry, or check free space.");
+                log("✗ Copy failed. Retry, or check free space.");
             }
         } catch (Throwable t) {
-            log("ERROR: " + t);
-        } finally {
-            ui.post(() -> applyBtn.setEnabled(true));
+            log("✗ Apply failed: " + t.getMessage());
         }
     }
 
@@ -554,55 +901,60 @@ public class MainActivity extends Activity {
      *  Use this when our patch made things worse (wrong-version bundle, crash
      *  on load, missing text): the game fetches a clean JP bundle next launch. */
     private void onResetLangPacks() {
-        if (service == null && !shizukuReady) {
-            log("ERROR: connect Shizuku first (reset needs shell access).");
+        if (!isConnected()) {
+            log("Connect Shizuku first (reset needs shell access).");
             return;
         }
-        resetBtn.setEnabled(false);
+        if (!tryBegin()) return;
         new Thread(() -> {
             try {
-                execShell("am force-stop " + GAME_PKG);
+                section("Reset");
+                shell("am force-stop " + GAME_PKG);
                 // delete every __data under the language group folder (all versions)
-                String r = execShell(
+                ShellResult r = shell(
                         "for f in " + GAME_CACHE_GLOB + "; do rm -f \"$f\" && echo \"DEL:$f\"; done");
                 int del = 0;
-                for (String line : r.split("\n")) {
-                    line = line.trim();
-                    if (line.startsWith("DEL:")) del++;
+                for (String line : r.out.split("\n")) {
+                    if (line.trim().startsWith("DEL:")) del++;
                 }
-                log(del > 0
-                        ? "Deleted " + del + " language pack(s).\nNext game launch re-downloads clean JP."
-                        : "No language packs found to delete (game already clean?).");
                 // also drop our staged patch so a stale __data isn't reapplied later
                 File staged = stagedPatch();
-                if (staged != null && staged.exists()) {
-                    staged.delete();
-                    log("Also cleared the staged patch file.");
-                }
+                boolean cleared = staged != null && staged.exists() && staged.delete();
+                log(del > 0
+                        ? "Deleted " + del + " language pack(s)" + (cleared ? " and the staged patch" : "")
+                                + ". The game re-downloads Japanese on next launch."
+                        : "No language packs found (game already clean?)"
+                                + (cleared ? " Cleared the staged patch." : ""));
+                doneLabel = null;
             } catch (Throwable t) {
-                log("ERROR resetting language packs: " + t.getMessage());
+                log("✗ Reset failed: " + t.getMessage());
             } finally {
-                ui.post(() -> resetBtn.setEnabled(true));
+                ui.post(this::end);
             }
         }, "reset").start();
     }
 
-    /** Tap the status line: self-test BOTH shell paths + killer-setting hints. */
-    private void runDiagnostics() {        new Thread(() -> {
-            log("\n— Diagnostics —");
-            log("UserService bound: " + (service != null)
+    /** Tap the status card: self-test BOTH shell paths + killer-setting hints. */
+    private void runDiagnostics() {
+        new Thread(() -> {
+            section("Diagnostics");
+            IUserService s = service;
+            log("UserService bound: " + (s != null)
                     + " | newProcess available: " + ShellRunner.available());
-            if (service != null) {
+            if (s != null) {
                 try {
-                    log("UserService id: " + service.exec("id").trim());
+                    ShellResult id = ShellResult.parse(s.exec("id"));
+                    log("UserService: " + (id.out.isEmpty() ? "exit " + id.code + id.reason() : id.firstLine()));
                 } catch (Throwable t) {
                     log("UserService exec FAILED: " + t.getMessage());
                 }
             }
-            log("newProcess id: " + ShellRunner.exec("id").trim());
-            log("phantom_procs setting: " + ShellRunner.exec(
-                    "settings get global settings_enable_monitor_phantom_procs").trim());
-            log("device: " + android.os.Build.MODEL + " | Android "
+            ShellResult id = ShellResult.parse(ShellRunner.exec("id"));
+            log("newProcess: " + (id.out.isEmpty() ? "exit " + id.code + id.reason() : id.firstLine()));
+            ShellResult ph = ShellResult.parse(ShellRunner.exec(
+                    "settings get global settings_enable_monitor_phantom_procs"));
+            log("phantom_procs: " + (ph.out.isEmpty() ? "?" + ph.reason() : ph.firstLine()));
+            log("Device: " + android.os.Build.MODEL + " | Android "
                     + android.os.Build.VERSION.RELEASE);
         }, "diag").start();
     }
@@ -613,6 +965,13 @@ public class MainActivity extends Activity {
         File dir = getExternalFilesDir(null);
         return dir == null ? new File(getFilesDir(), "translation_cache.json")
                 : new File(dir, "translation_cache.json");
+    }
+
+    /** Release stamp (built_at|patch_md5) of the version.json the cache came from. */
+    private File cacheStampFile() {
+        File dir = getExternalFilesDir(null);
+        return dir == null ? new File(getFilesDir(), "translation_cache.stamp")
+                : new File(dir, "translation_cache.stamp");
     }
 
     private File versionFile() {
@@ -627,12 +986,29 @@ public class MainActivity extends Activity {
     private long expectedPatchSize() {
         try {
             if (versionFile().exists()) {
-                java.util.Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
+                Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
                 long s = Long.parseLong(v.getOrDefault("patch_size", "0"));
                 if (s > 0) return s;
             }
         } catch (Throwable ignored) {}
         return DEFAULT_EXPECTED_SIZE;
+    }
+
+    /** Identity of a release, or null if version.json carries neither field. */
+    private static String releaseStamp(Map<String, String> v) {
+        if (v == null) return null;
+        String built = v.getOrDefault("built_at", "");
+        String md5 = v.getOrDefault("patch_md5", "");
+        if (built.isEmpty() && md5.isEmpty()) return null;
+        return built + "|" + md5;
+    }
+
+    private void writeCacheStamp(Map<String, String> v) {
+        String stamp = releaseStamp(v);
+        if (stamp == null) return;
+        try {
+            writeSmall(cacheStampFile(), stamp);
+        } catch (Throwable ignored) {}
     }
 
     private static String readSmall(File f) throws Exception {
@@ -650,185 +1026,236 @@ public class MainActivity extends Activity {
 
     // ---------------- download latest patch (P1) ----------------
 
-    /** Size of the newest live language bundle on the device, or null if none. */
-    private String newestLiveBundleSize() {
+    /** Size of the newest live language bundle on the device, or -1 if none. */
+    private long newestLiveBundleSize() {
         try {
-            String srcQ = execShell("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
-                    .replace("exit=0", "").trim();
-            String srcBundle = srcQ.startsWith("/sdcard/") ? srcQ.split("\n")[0] : "";
-            if (srcBundle.isEmpty()) return null;
-            String sz = execShell("stat -c %s '" + srcBundle + "' 2>/dev/null || wc -c < '" + srcBundle + "'")
-                    .replace("exit=0", "").trim();
-            return sz.split("\n")[0].trim();
+            String src = newestLiveBundle();
+            return src == null ? -1 : remoteSize(src);
         } catch (Throwable t) {
-            return null;
+            return -1;
         }
     }
 
     private void onDownload() {
-        downloadBtn.setEnabled(false);
+        if (!tryBegin()) return;
         new Thread(() -> {
             try {
-                log("\n— Checking latest patch —");
-                String vj = Downloader.fetchString(VERSION_URL, this::log);
-                java.util.Map<String, String> v = JsonMap.parseFlat(vj);
+                section("Download");
+                String vj = Downloader.fetchString(VERSION_URL, s -> {});
+                Map<String, String> v = JsonMap.parseFlat(vj);
                 writeSmall(versionFile(), vj);
                 long wantSize = Long.parseLong(v.getOrDefault("patch_size", "0"));
                 String wantMd5 = v.getOrDefault("patch_md5", "");
-                log("Latest: " + wantSize + " bytes, built " + v.getOrDefault("built_at", "?"));
+                log("Latest patch: " + fmtBytes(wantSize) + ", built " + v.getOrDefault("built_at", "?") + ".");
                 // Cross-check against the live bundle on the device: if the game
                 // updated since this patch was built, the sizes won't match and
                 // the downloadable patch is the WRONG version for this game.
-                String live = newestLiveBundleSize();
-                if (live != null && wantSize > 0 && !live.equals(String.valueOf(wantSize))) {
-                    log("NOTE: your game's language pack is " + live + " bytes, but this patch is "
-                            + wantSize + " bytes.");
-                    log("That means the game updated AFTER this patch was built — Download+Apply "
-                            + "would install the wrong version.\nUse \"Auto-patch after update\" "
-                            + "instead (it builds from your live bundle).");
+                long live = isConnected() ? newestLiveBundleSize() : -1;
+                if (live > 0 && wantSize > 0 && live != wantSize) {
+                    log("⚠ Your game's language pack is " + fmtBytes(live)
+                            + ": the game updated after this patch was built.\n"
+                            + "  Applying it would install the wrong version — try Auto-patch (beta) instead.");
                 }
                 File staged = stagedPatch();
                 if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
-                    log("You already have the latest patch — nothing to download.");
+                    log("Already up to date.");
                 } else {
-                    log("Downloading patch…");
-                    Downloader.fetchToFile(DATA_URL, staged, this::log);
+                    Downloader.fetchToFile(DATA_URL, staged, s -> {});
                     String got = md5Of(staged);
                     if (!wantMd5.equalsIgnoreCase(got)) {
-                        log("ERROR: md5 mismatch after download (" + got + ")");
+                        log("✗ Download corrupted (md5 mismatch). Try again.");
                         return;
                     }
                     if (wantSize > 0 && staged.length() != wantSize) {
-                        log("ERROR: size mismatch after download");
+                        log("✗ Download corrupted (size mismatch). Try again.");
                         return;
                     }
-                    log("Patch downloaded & verified.");
+                    log("✓ Patch downloaded and verified.");
                 }
                 try {
-                    Downloader.fetchToFile(CACHE_URL, cacheFile(), this::log);
-                    log("Translation cache refreshed.");
+                    Downloader.fetchToFile(CACHE_URL, cacheFile(), s -> {});
+                    writeCacheStamp(v);
                 } catch (Throwable t) {
-                    log("(cache refresh failed, keeping old one: " + t.getMessage() + ")");
+                    log("⚠ Translation cache not refreshed (" + t.getMessage() + ").");
                 }
-                log("Done — tap \"Apply English patch\".");
-                ui.post(this::refreshStatus);
+                log("Ready — tap Apply.");
             } catch (Throwable t) {
-                log("DOWNLOAD ERROR: " + t.getMessage()
-                        + "\nCheck internet, or use \"Choose __data file…\" instead.");
+                log("✗ Download failed: " + t.getMessage()
+                        + "\nCheck your connection, or use \"Choose __data file…\".");
             } finally {
-                ui.post(() -> downloadBtn.setEnabled(true));
+                ui.post(this::end);
             }
         }, "download").start();
     }
+
     // ---------------- on-device auto-patch (beta) ----------------
 
+    /** Expected, user-explainable auto-patch failure (message is shown as-is). */
+    private static final class AutoPatchFail extends Exception {
+        AutoPatchFail(String msg) {
+            super(msg);
+        }
+    }
+
     private void onAutoPatch() {
-        if (service == null && !shizukuReady) {
-            log("ERROR: connect Shizuku first.");
+        if (!isConnected()) {
+            log("Connect Shizuku first.");
             return;
         }
-        if (service == null) {
-            log("UserService not bound — using newProcess fallback.");
-        }
-        autoBtn.setEnabled(false);
+        if (!tryBegin()) return;
         new Thread(() -> {
             try {
                 doAutoPatch();
+            } catch (AutoPatchFail f) {
+                log("✗ Auto-patch failed: " + f.getMessage());
+                log(AUTO_PATCH_ADVICE);
             } catch (Throwable t) {
-                log("AUTO-PATCH FAILED: " + t.getMessage()
-                        + "\nFallback: \"Download latest patch\" works once we publish a build"
-                        + " for this game version.");
+                String msg = String.valueOf(t.getMessage());
+                int nl = msg.indexOf('\n');
+                if (nl >= 0) msg = msg.substring(0, nl);
+                log("✗ Auto-patch failed (" + t.getClass().getSimpleName() + ": " + msg + ").");
+                log(AUTO_PATCH_ADVICE);
             } finally {
-                ui.post(() -> autoBtn.setEnabled(true));
+                ui.post(this::end);
             }
         }, "autopatch").start();
     }
 
+    /** Fresh version.json when online (saved for later), else the saved copy, else null. */
+    private Map<String, String> loadReleaseInfo() {
+        try {
+            String vj = Downloader.fetchString(VERSION_URL, s -> {});
+            Map<String, String> v = JsonMap.parseFlat(vj);
+            writeSmall(versionFile(), vj);
+            return v;
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (versionFile().exists()) {
+                log("Offline — using the saved release info.");
+                return JsonMap.parseFlat(readSmall(versionFile()));
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /** Re-download translation_cache.json when it's missing or was fetched for an
+     *  older release than the one version.json now reports. */
+    private void ensureFreshCache(Map<String, String> v) throws AutoPatchFail {
+        File cf = cacheFile();
+        String want = releaseStamp(v);
+        String have = "";
+        try {
+            if (cacheStampFile().exists()) have = readSmall(cacheStampFile()).trim();
+        } catch (Throwable ignored) {
+        }
+        boolean existed = cf.exists();
+        if (existed && (want == null || want.equals(have))) return;
+        try {
+            Downloader.fetchToFile(CACHE_URL, cf, s -> {});
+            writeCacheStamp(v);
+            log(existed ? "Translation cache updated to the latest release." : "Translation cache downloaded.");
+        } catch (Throwable t) {
+            if (existed) {
+                log("⚠ Couldn't refresh the translation cache; using the older copy.");
+            } else {
+                throw new AutoPatchFail("translation cache unavailable — connect to the internet and retry.");
+            }
+        }
+    }
+
     private void doAutoPatch() throws Exception {
-        log("\n— Auto-patch (fully on-device) —");
-        execShell("am force-stop " + GAME_PKG);
+        section("Auto-patch (beta)");
+        shell("am force-stop " + GAME_PKG);
 
         // 1. live bundle path(s)
-        String found = execShell("for f in " + GAME_CACHE_GLOB
-                + "; do [ -f \"$f\" ] && echo \"FOUND:$f\"; done");
-        java.util.List<String> dests = new java.util.ArrayList<>();
-        for (String line : found.split("\n")) {
-            line = line.trim();
-            if (line.startsWith("FOUND:")) dests.add(line.substring(6));
-        }
+        List<String> dests = findLiveBundles();
         if (dests.isEmpty())
-            throw new IllegalStateException("no language bundle found — run the game once first");
+            throw new AutoPatchFail("no language pack on the device. Open the game once so it downloads its data.");
 
         // source = NEWEST bundle (an old asset-hash folder may linger post-update)
-        String srcQ = execShell("ls -t " + GAME_CACHE_GLOB + " 2>/dev/null | head -1")
-                .replace("exit=0", "").trim();
-        String srcBundle = srcQ.startsWith("/sdcard/") ? srcQ.split("\n")[0] : dests.get(0);
-        log("source bundle (newest): " + srcBundle);
+        String newest = newestLiveBundle();
+        String srcBundle = newest != null ? newest : dests.get(0);
 
         // 2. stage bundle + global-metadata into our own dir (shell uid can read them)
         File dir = getExternalFilesDir(null);
-        if (dir == null) throw new IllegalStateException("no external files dir");
+        if (dir == null) throw new AutoPatchFail("app storage is unavailable.");
         String q = dir.getAbsolutePath();
         File stockF = new File(dir, "stock_new.__data");
         File metaF = new File(dir, "global-metadata.dat");
-        String r1 = execShell("cp '" + srcBundle + "' '" + q
+        ShellResult r1 = shell("cp '" + srcBundle + "' '" + q
                 + "/stock_new.__data' && echo OK1");
-        if (!r1.contains("OK1")) throw new IllegalStateException("cannot read bundle:\n" + r1);
-        String r2 = execShell("cp '" + META_PATH + "' '" + q
+        if (!r1.out.contains("OK1"))
+            throw new AutoPatchFail("could not read the game's language pack" + r1.reason() + ".");
+        ShellResult r2 = shell("cp '" + META_PATH + "' '" + q
                 + "/global-metadata.dat' && echo OK2");
-        if (!r2.contains("OK2")) {
-            log("metadata not at the usual path, searching…");
-            String fr = execShell("find /sdcard/Android/data/" + GAME_PKG
-                    + "/files -name global-metadata.dat 2>/dev/null | head -1");
-            String mp = fr.replace("exit=0", "").trim();
+        if (!r2.out.contains("OK2")) {
+            String mp = shell("find /sdcard/Android/data/" + GAME_PKG
+                    + "/files -name global-metadata.dat 2>/dev/null | head -1").firstLine();
             if (!mp.startsWith("/"))
-                throw new IllegalStateException("global-metadata.dat not found on device");
-            r2 = execShell("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
-            if (!r2.contains("OK2"))
-                throw new IllegalStateException("cannot read metadata:\n" + r2);
+                throw new AutoPatchFail("the game's global-metadata.dat was not found.");
+            r2 = shell("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
+            if (!r2.out.contains("OK2"))
+                throw new AutoPatchFail("could not read the game's metadata" + r2.reason() + ".");
         }
 
-        // 3. AES keys from the game's own metadata (offsets from version.json or
-        // defaults — the 08-13 APK-era offsets moved; version.json wins when present)
-        int keyOff = 0xBCF290, ivOff = 0xBD1CE8;
-        try {
-            if (versionFile().exists()) {
-                java.util.Map<String, String> v = JsonMap.parseFlat(readSmall(versionFile()));
-                if (v.containsKey("meta_key_off")) keyOff = Long.decode(v.get("meta_key_off")).intValue();
-                if (v.containsKey("meta_iv_off")) ivOff = Long.decode(v.get("meta_iv_off")).intValue();
+        // 3. AES keys from the game's own metadata. Offsets come from the live
+        // version.json; the baked fallback goes stale with every game update.
+        Map<String, String> v = loadReleaseInfo();
+        int keyOff = FALLBACK_KEY_OFF, ivOff = FALLBACK_IV_OFF;
+        boolean liveOffsets = false;
+        if (v != null && v.containsKey("meta_key_off") && v.containsKey("meta_iv_off")) {
+            try {
+                keyOff = Long.decode(v.get("meta_key_off")).intValue();
+                ivOff = Long.decode(v.get("meta_iv_off")).intValue();
+                liveOffsets = true;
+            } catch (Throwable ignored) {
+                keyOff = FALLBACK_KEY_OFF;
+                ivOff = FALLBACK_IV_OFF;
             }
-        } catch (Throwable ignored) {}
-        byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
-        byte[][] keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
-
-        // 4. translation cache (download once, then reuse)
-        if (!cacheFile().exists()) {
-            log("downloading translation cache (one-time)…");
-            Downloader.fetchToFile(CACHE_URL, cacheFile(), this::log);
         }
-        java.util.Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile()));
+        if (!liveOffsets) {
+            log("⚠ WARNING: no release info (version.json) — using BUILT-IN AES key offsets "
+                    + String.format(Locale.US, "0x%x/0x%x", keyOff, ivOff) + ".\n"
+                    + "⚠ These go stale with game updates. Go online and retry if this fails.");
+        }
+        String keyMismatch = "the AES keys don't match this game build"
+                + (liveOffsets ? "." : " (built-in key offsets were used).");
+        byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
+        byte[][] keys;
+        try {
+            keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
+        } catch (IllegalArgumentException e) {
+            throw new AutoPatchFail(keyMismatch);
+        }
+
+        // 4. translation cache (refreshed whenever the release is newer)
+        ensureFreshCache(v);
+        Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile()));
         @SuppressWarnings("unchecked")
-        java.util.Map<String, Object> cacheRaw = (java.util.Map<String, Object>) pl.get("cache");
-        java.util.Map<String, String> cache = new java.util.LinkedHashMap<>(cacheRaw.size());
-        for (java.util.Map.Entry<String, Object> e : cacheRaw.entrySet())
+        Map<String, Object> cacheRaw = (Map<String, Object>) pl.get("cache");
+        if (cacheRaw == null) throw new AutoPatchFail("translation cache is malformed — retry while online.");
+        Map<String, String> cache = new java.util.LinkedHashMap<>(cacheRaw.size());
+        for (Map.Entry<String, Object> e : cacheRaw.entrySet())
             cache.put(e.getKey(), String.valueOf(e.getValue()));
-        java.util.Map<String, java.util.Map<String, String>> hand = new java.util.LinkedHashMap<>();
+        Map<String, Map<String, String>> hand = new java.util.LinkedHashMap<>();
         Object handObj = pl.get("hand");
-        if (handObj instanceof java.util.Map) {
+        if (handObj instanceof Map) {
             @SuppressWarnings("unchecked")
-            java.util.Map<String, Object> hm = (java.util.Map<String, Object>) handObj;
-            for (java.util.Map.Entry<String, Object> e : hm.entrySet()) {
+            Map<String, Object> hm = (Map<String, Object>) handObj;
+            for (Map.Entry<String, Object> e : hm.entrySet()) {
                 @SuppressWarnings("unchecked")
-                java.util.Map<String, Object> inner = (java.util.Map<String, Object>) e.getValue();
-                java.util.Map<String, String> dst = new java.util.LinkedHashMap<>();
-                for (java.util.Map.Entry<String, Object> e2 : inner.entrySet())
+                Map<String, Object> inner = (Map<String, Object>) e.getValue();
+                Map<String, String> dst = new java.util.LinkedHashMap<>();
+                for (Map.Entry<String, Object> e2 : inner.entrySet())
                     dst.put(e2.getKey(), String.valueOf(e2.getValue()));
                 hand.put(e.getKey(), dst);
             }
         }
 
         // 5. known table names (bundled asset)
-        java.util.List<String> names = new java.util.ArrayList<>();
+        List<String> names = new ArrayList<>();
         try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(
                 getAssets().open("tables.txt")))) {
             String ln;
@@ -838,24 +1265,38 @@ public class MainActivity extends Activity {
             }
         }
 
-        // 6. patch fully on-device
+        // 6. patch fully on-device. Per-table notes stay out of the UI log;
+        // only the summary below is shown.
         byte[] stock = java.nio.file.Files.readAllBytes(stockF.toPath());
-        AutoPatcher.Result res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, this::log);
+        List<String> notes = new ArrayList<>();
+        AutoPatcher.Result res;
+        try {
+            res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add);
+        } catch (IllegalStateException e) {
+            if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch);
+            throw e;
+        }
         File outF = new File(dir, "patched.__data");
         java.nio.file.Files.write(outF.toPath(), res.data);
-        log("patched " + res.patched + "/" + res.tablesFound + " tables; "
-                + res.leftJaCells + " cells left Japanese (new content); "
-                + res.data.length + " bytes");
+
+        StringBuilder sum = new StringBuilder("Patched " + res.patched + "/" + res.tablesFound + " tables");
+        int missing = names.size() - res.tablesFound;
+        if (missing > 0) sum.append(", ").append(missing).append(" not found");
+        if (res.fitAfterRevert > 0) sum.append(", ").append(res.fitAfterRevert).append(" trimmed to fit");
+        if (res.jaOnly > 0) sum.append(", ").append(res.jaOnly).append(" kept Japanese");
+        sum.append(".\n").append(String.format(Locale.US, "%,d", res.leftJaCells))
+                .append(" cells left Japanese (new content).");
+        log(sum.toString());
 
         // 7. write back over every live copy
         for (String dest : dests) {
-            String rr = execShell("cp '" + outF.getAbsolutePath() + "' '" + dest
+            ShellResult rr = shell("cp '" + outF.getAbsolutePath() + "' '" + dest
                     + "' && echo CP_OK; chmod 0666 '" + dest + "' 2>/dev/null");
-            if (!rr.contains("CP_OK"))
-                throw new IllegalStateException("write failed for " + dest + "\n" + rr);
-            log("written: " + dest);
+            if (!rr.out.contains("CP_OK"))
+                throw new AutoPatchFail("could not write " + shortPath(dest) + rr.reason() + ".");
         }
-        log("\nSUCCESS — auto-patched on device. Launch the game!");
-        setStatus(0xFF388E3C, "Auto-patch installed! Launch the game.");
+        log("✓ Auto-patch installed to " + dests.size()
+                + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");
+        doneLabel = "Auto-patch installed";
     }
 }
