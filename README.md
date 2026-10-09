@@ -15,10 +15,10 @@ One translation, every platform. Pick yours:
 | Platform | Method | Guide |
 |----------|--------|-------|
 | **Android phone** (no root) | Shizuku app | this page (below) |
-| **Windows PC (DMM)** | Ready-to-use zip (download, double-click) | [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) · [`tools/pc/README.md`](tools/pc/README.md) |
+| **Windows PC (DMM)** | One PowerShell command, or a ready-to-use zip (download, double-click) | [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) · [`tools/pc/README.md`](tools/pc/README.md) |
 | **Android emulator / rooted / GPG-PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
 
-PC users: **no repo clone, no terminal**. Grab the zip from the
+PC users: paste `irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1 | iex` into PowerShell, or, with **no terminal at all**, grab the zip from the
 [Releases](../../releases) tab, extract it, and double-click `Install-EnPatch.bat`
 once. Then just click **Play** in DMM GAME PLAYER. `START-HERE.txt` in the zip is
 the whole guide in plain language.

@@ -16,10 +16,13 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -GameDir 'D:\Games\mushoku_coe_cl' -Force
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -Check   # report only, change nothing
 #>
 param(
     [string]$GameDir,
-    [switch]$Force
+    [switch]$Force,
+    # Report what an install would do (game, cache, current language), change nothing.
+    [switch]$Check
 )
 
 $ErrorActionPreference = 'Stop'
@@ -45,6 +48,30 @@ $liveInapp = Join-Path $gameDir $InappRelPath
 $liveBoot  = Join-Path $gameDir $BootCfgRelPath
 foreach ($f in @($liveInapp, $liveBoot)) {
     if (-not (Test-Path -LiteralPath $f)) { Write-Host "ERROR: expected game file missing: $f"; exit 1 }
+}
+
+if ($Check) {
+    # Read-only: no downloads besides version.json (kept in memory), no writes.
+    $v = Invoke-RestMethod -UseBasicParsing -Uri "$ReleaseBase/$VersionFile"
+    $want = $v.pc.language_ja_en
+    Write-Host "latest patch : $($want.size) B, md5 $($want.md5.Substring(0,8))..., game build $($v.game_version)"
+    $cacheDir = Get-LangCacheDir
+    $live = if ($cacheDir) { Join-Path $cacheDir '__data' }
+    if (-not $cacheDir) {
+        Write-Host 'cache        : not found - launch the game once to the title screen first'
+    } elseif (-not (Test-Path -LiteralPath $live)) {
+        Write-Host "cache        : $cacheDir (no language pack yet)"
+    } else {
+        $state = if ((Get-Md5 $live) -eq $want.md5) { 'English (latest patch)' } else { 'Japanese, or an older patch' }
+        Write-Host "cache        : $cacheDir"
+        Write-Host "installed    : $state"
+    }
+    if ($cacheDir -and $want.hash -and (Split-Path $cacheDir -Leaf) -ne $want.hash) {
+        Write-Host 'NOTE: the game has not downloaded the language pack this patch targets yet.'
+        Write-Host '      Launch it once to the title screen, close it, then install.'
+    }
+    Write-Host 'check only - nothing was changed.'
+    exit 0
 }
 
 # --- 2. download + verify the patch -----------------------------------------

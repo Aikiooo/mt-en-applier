@@ -38,6 +38,10 @@ anything about PowerShell or command lines. Just follow the 3 steps.
 
   STEP 1 - install the patch (one time only)
   ------------------------------------------------------------
+  (Shortcut without this zip: open PowerShell, paste
+      irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1 | iex
+   and press Enter. It runs the very same installer.)
+
   Double-click:
 
         Install-EnPatch.bat

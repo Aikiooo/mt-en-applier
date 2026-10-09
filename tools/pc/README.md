@@ -8,7 +8,19 @@ Unofficial English patch for the **Windows / DMM** release of *Mushoku Tensei: C
 
 ## TL;DR — just make it English
 
-**You don't need this repo or any command lines.** Grab the ready-to-use zip:
+**Quickest: one command, nothing to download.** Open PowerShell (Start menu → type
+*PowerShell*), paste this, press Enter:
+
+```powershell
+irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1 | iex
+```
+
+It runs the same installer as the zip below. Then click **Play** in DMM GAME PLAYER.
+To check first without changing anything:
+`& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -Check`
+(`-GameDir 'D:\Games\mushoku_coe_cl'` works the same way if the game isn't found.)
+
+**Or use the ready-to-use zip** (no command line at all):
 
 1. **Download** the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) and extract it anywhere.
 2. Double-click **`Install-EnPatch.bat`** — once. It does everything.
@@ -83,8 +95,9 @@ A title-update usually refreshes the game's cached language bundle, wiping the p
 
 | File | Purpose |
 |------|---------|
+| `install.ps1` | One-line web installer (`irm … \| iex`): fetches the two scripts below from `patch-latest` and runs them. Not in the zip. |
 | `Install-EnPatch.bat` | Double-click installer wrapper (runs the `.ps1`). **Start here.** |
-| `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. |
+| `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. `-Check` reports only. |
 | `MT.EnPatch.psm1` | Shared constants + functions (cache seeding, download/verify, game detection). |
 | `START-HERE.txt` | The 3-step plain-language guide for non-technical users. |
 | `maintainer/` | Maintainer-side builders that produce the release artifacts (PC bundles + `version.json`, and this user zip). |

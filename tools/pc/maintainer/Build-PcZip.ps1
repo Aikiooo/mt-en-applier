@@ -19,6 +19,10 @@
   downloads those from the rolling 'patch-latest' release at install time, so
   this zip stays tiny and never goes stale.
 
+  -Publish also uploads the one-line web installer (install.ps1) plus the two
+  scripts it fetches (Install-EnPatch.ps1, MT.EnPatch.psm1) to 'patch-latest',
+  so the zip and `irm .../install.ps1 | iex` always run the same installer.
+
 .EXAMPLE
   # build the zip (review it, then attach it to a GitHub release)
   powershell -File maintainer\Build-PcZip.ps1
@@ -34,6 +38,8 @@ param(
     # If set with -Publish, the release is created/updated under this tag.
     [string]$Tag = 'pc-v1',
     [string]$ReleaseTitle = 'PC English Patch (DMM)',
+    # Where install.ps1 lives (and the bundles it downloads).
+    [string]$WebRelease = 'patch-latest',
     [switch]$Publish
 )
 
@@ -97,6 +103,12 @@ release, so this zip stays current.
         Write-Host "creating release '$Tag' ($ReleaseTitle) ..."
         gh release create $Tag $zipPath --repo $Repo --title $ReleaseTitle --notes $notes
     }
+
+    # web installer: same scripts as the zip, next to the patch it downloads
+    $web = @('install.ps1', 'Install-EnPatch.ps1', 'MT.EnPatch.psm1') | ForEach-Object { Join-Path $pcDir $_ }
+    Write-Host "uploading the web installer to '$WebRelease' ..."
+    gh release upload $WebRelease @web --repo $Repo --clobber
+    if ($LASTEXITCODE -ne 0) { Write-Host 'ERROR: web installer upload failed'; exit 1 }
     Write-Host 'published.'
 } else {
     Write-Host ''
