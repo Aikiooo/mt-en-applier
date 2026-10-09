@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The MT-DB site favicon (mt_db/web/public/favicon.svg): gold-to-teal border
-     and a gold heavy "M". Drawn in the favicon's 64-unit space, scaled 0.94x
-     and centred so the border stays inside even a round launcher mask. The "M" is a
-     polygon traced to the site's rendering (vectors can't draw text). -->
+<!-- Same family as the MT-DB site icon (mt_db/web/public/favicon.svg): its navy,
+     gold-to-teal frame and gold, with the app's own mark "EN". Drawn in the
+     favicon's 64-unit space, scaled 0.94x and centred so the frame stays inside
+     even a round launcher mask. The letters are polygons (vectors can't draw text). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -31,6 +31,6 @@
         </path>
         <path
             android:fillColor="#E3B554"
-            android:pathData="M17.62,44 V20 H28.3 L32.2,37 L35.95,20 H46.38 V44 H39.38 V25.6 L35,44 H28.25 L23.88,25.8 V44 Z" />
+            android:pathData="M17,22 H30.3 V26.3 H22.4 V29.9 H29.2 V34.1 H22.4 V37.7 H30.6 V42 H17 Z M33,42 V22 H38.4 L42,33.4 V22 H47 V42 H41.6 L38,30.6 V42 Z" />
     </group>
 </vector>
