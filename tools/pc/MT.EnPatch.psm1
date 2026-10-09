@@ -21,8 +21,8 @@ $script:BootCfgRelPath  = 'mushoku_coe_cl_Data\boot.config'
 # per-user "LocalLow" folder, which has no reliable env var on every Windows
 # version, so candidate roots are globbed rather than built from $env:LOCALAPPDATA.
 $script:LangBundleGuid = 'cad73e991807559422ab03e01424a9d3'
-$script:LangBundleHash = '50e4537b475104db4171d5c1deb8a84b'
-$script:LangBundleSize = 1896110
+$script:LangBundleHash = '515508ac386204f43f28aea20ba4e470'
+$script:LangBundleSize = 1898964
 $script:PatchDataDir = Join-Path $env:LOCALAPPDATA 'MT-EN-Applier\pc'
 
 # Resolve the non-ASCII Unity publisher cache dir ("GREE Entertainment_<クロエコ>")
