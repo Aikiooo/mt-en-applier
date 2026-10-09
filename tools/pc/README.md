@@ -62,10 +62,23 @@ Two rules make this work (learned the hard way):
 
 1. Run the game once to the title screen, then close it.
 2. Run `Install-EnPatch.ps1`. It will:
-   - download `language-ja_en.bundle` + `inapp_assets_all_en.bundle` from `patch-latest` and verify size + md5,
+   - download the language bundle (`language-ja_en.bundle`, or the chosen language's) from `patch-latest` and verify size + md5,
    - seed the language bundle into the Unity cache `__data`,
    - snapshot clean stock copies (`stock_inapp_assets_all.bundle`, `stock_boot.config`) into `%LOCALAPPDATA%\MT-EN-Applier\pc\` for the wrapper.
 3. That's it — patching is done. You don't re-run this unless the game updates.
+
+It refuses to install when the game's newest language-pack folder isn't the one the
+patch targets (the game hasn't been launched since an update, or the patch for a new
+game version isn't out yet): seeding that folder would silently do nothing. `-Force`
+overrides.
+
+### Other languages
+
+Only languages published for the current game build are offered. With just English
+there's no question; with more, the installer shows a short menu (default: your last
+choice, else your Windows display language, else English) and remembers the answer,
+so re-running after a game update doesn't ask again. Skip the menu with `-Language es`
+(or `& ([scriptblock]::Create((irm …/install.ps1))) -Language es`).
 
 ## Play
 
@@ -79,10 +92,11 @@ Some screens only pull their text on the first load. If you see a stray Japanese
 
 A title-update usually refreshes the game's cached language bundle, wiping the patch. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then click Play in DMM again.
 
-## Uninstall
+## Uninstall (back to Japanese)
 
-- Delete the seeded cache folder `…\GREE Entertainment_クロエコ\<guid>\<hash>\` (or just let the game re-download), and
-- delete `%LOCALAPPDATA%\MT-EN-Applier\pc\`.
+- Double-click **`Restore-Japanese.bat`** (or run the installer with `-Restore`). It removes
+  the patched language pack; the game re-downloads the Japanese one on the title screen.
+- Optionally delete `%LOCALAPPDATA%\MT-EN-Applier\pc\` (downloads + stock snapshots).
 
 ## Troubleshooting
 
@@ -97,7 +111,8 @@ A title-update usually refreshes the game's cached language bundle, wiping the p
 |------|---------|
 | `install.ps1` | One-line web installer (`irm … \| iex`): fetches the two scripts below from `patch-latest` and runs them. Not in the zip. |
 | `Install-EnPatch.bat` | Double-click installer wrapper (runs the `.ps1`). **Start here.** |
-| `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. `-Check` reports only. |
+| `Install-EnPatch.ps1` | One-command installer: download, verify, seed cache, capture stock. `-Language`, `-Check` (report only), `-Restore`. |
+| `Restore-Japanese.bat` | Double-click undo: runs the installer with `-Restore`. |
 | `MT.EnPatch.psm1` | Shared constants + functions (cache seeding, download/verify, game detection). |
 | `START-HERE.txt` | The 3-step plain-language guide for non-technical users. |
 | `maintainer/` | Maintainer-side builders that produce the release artifacts (PC bundles + `version.json`, and this user zip). |

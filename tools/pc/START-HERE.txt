@@ -83,6 +83,10 @@ anything about PowerShell or command lines. Just follow the 3 steps.
     "Run anyway". The scripts only copy game files around; the
     source is right here for anyone to read.
 
+* Want the Japanese text back?
+    Double-click Restore-Japanese.bat, then launch the game. It
+    downloads the Japanese text again on the title screen.
+
 * DMM "repaired" the game and English is gone
     A game update or a DMM file repair restored the stock files.
     Just double-click Install-EnPatch.bat again.

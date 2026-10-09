@@ -34,6 +34,10 @@
   powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PatchFile D:\out\__data_es -Stock D:\stock\__data_v13_android -Publish
 
 .EXAMPLE
+  # also offer it on PC (exact-size, CRC-forged bundle for the current PC build)
+  powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PcPatchFile D:\out\language-ja_es.bundle -Publish
+
+.EXAMPLE
   # build the bundle with AutoPatcher (grown, NOT exact-size: test on a phone first)
   powershell -File tools\translations\Publish-Locale.ps1 -Locale es -BuildPatch -Stock D:\stock\__data_v13_android -KeysJson D:\keys\masterdata_keys.json
 
@@ -45,6 +49,9 @@ param(
     [Parameter(Mandatory = $true)][string]$Locale,
     # A ready-made Android __data for this locale.
     [string]$PatchFile,
+    # A ready-made PC (DMM) language bundle for this locale: exact stock size +
+    # forged CRC like the English one, built for the release's current PC game build.
+    [string]$PcPatchFile,
     # Build __data.<locale> with AutoPatchMain (needs -Stock and -KeysJson).
     [switch]$BuildPatch,
     # The Android-target stock bundle the patch is (or gets) built from. Its md5
@@ -187,6 +194,24 @@ if ($Unpublish) {
         Write-Host "no patch: '$Locale' will be offered as Auto-patch only"
     }
 
+    # --- 2b. optional PC bundle (read by tools/pc/Install-EnPatch.ps1) ---------
+    if ($PcPatchFile) {
+        if (-not (Test-Path -LiteralPath $PcPatchFile)) { Fail "missing PC patch: $PcPatchFile" }
+        $en = $version.pc.language_ja_en
+        $pcSize = (Get-Item -LiteralPath $PcPatchFile).Length
+        # The PC catalog pins the bundle size; anything else fails to load.
+        if ($pcSize -ne [int64]$en.size -and -not $Force) {
+            Fail "PC bundle is $pcSize B but the current PC build needs exactly $($en.size) B (-Force overrides)"
+        }
+        $pcName = "language-ja_$Locale.bundle"
+        $pcPath = Join-Path $OutDir $pcName
+        Copy-Item -LiteralPath $PcPatchFile -Destination $pcPath -Force
+        $block.pc = [ordered]@{
+            language = [ordered]@{ file = $pcName; size = $pcSize; md5 = Get-Md5 $pcPath; hash = $en.hash }
+        }
+        $upload += $pcPath
+    }
+
     # --- 3. merge into version.json ---------------------------------------------
     if (-not $version.locales) {
         $version | Add-Member -NotePropertyName locales -NotePropertyValue ([pscustomobject]@{}) -Force
@@ -205,7 +230,8 @@ foreach ($f in $upload + $versionPath) { Write-Host ("  {0}  {1} B" -f (Split-Pa
 if ($version.locales) {
     Write-Host 'published languages after this run:'
     foreach ($p in $version.locales.PSObject.Properties) {
-        $mode = if ($p.Value.patch) { 'Download + Auto-patch' } else { 'Auto-patch only' }
+        $mode = if ($p.Value.PSObject.Properties['patch']) { 'Download + Auto-patch' } else { 'Auto-patch only' }
+        if ($p.Value.PSObject.Properties['pc']) { $mode += ' + PC' }
         Write-Host "  $($p.Name)  $($p.Value.name)  ($mode)"
     }
 }

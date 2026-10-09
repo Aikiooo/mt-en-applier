@@ -1,9 +1,9 @@
-# Mushoku Tensei PC English patch - one-line web installer (DMM GAME PLAYER).
+# Mushoku Tensei PC translation patch - one-line web installer (DMM GAME PLAYER).
 #
 # Paste into PowerShell (no download, no unzip):
 #   irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1 | iex
 #
-# With options (-GameDir <folder>, -Check, -Force):
+# With options (-Language <code>, -GameDir <folder>, -Check, -Restore, -Force):
 #   & ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -Check
 #
 # This only fetches the same installer that ships in the zip (Install-EnPatch.ps1
@@ -14,7 +14,7 @@
 # checks its size + md5 against version.json, exactly like the zip.
 
 & {
-    param([string]$GameDir, [switch]$Force, [switch]$Check)
+    param([string]$GameDir, [string]$Language, [switch]$Force, [switch]$Check, [switch]$Restore)
 
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 can default to TLS 1.0; GitHub needs 1.2.
@@ -40,6 +40,8 @@
     $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $dir 'Install-EnPatch.ps1'))
     if ($GameDir) { $a += @('-GameDir', $GameDir) }
     if ($Force) { $a += '-Force' }
+    if ($Language) { $a += @('-Language', $Language) }
     if ($Check) { $a += '-Check' }
+    if ($Restore) { $a += '-Restore' }
     & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @a
 } @args

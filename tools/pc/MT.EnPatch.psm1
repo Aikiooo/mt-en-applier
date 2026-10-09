@@ -7,6 +7,7 @@ Set-StrictMode -Version Latest
 $script:Repo          = 'Aikiooo/mt-en-applier'
 $script:Release       = 'patch-latest'
 $script:ReleaseBase   = "https://github.com/$($script:Repo)/releases/download/$($script:Release)"
+if ($env:MT_EN_RELEASE_BASE) { $script:ReleaseBase = $env:MT_EN_RELEASE_BASE.TrimEnd('/') }   # testing only
 
 $script:LangFileName  = 'language-ja_en.bundle'      # exact-size, CRC-forged language bundle
 $script:InappFileName = 'inapp_assets_all_en.bundle'  # EN inapp asset patch
@@ -121,45 +122,86 @@ function Get-GameDir {
     return $null
 }
 
-# Download + verify the patch artifacts from the rolling release. Returns a
-# hashtable @{ Files = @{lang;inapp}; Want = @{lang;inapp} }.
-function Get-PatchArtifacts {
-    param([switch]$Force)
+# Fetch version.json from the rolling release (saved in PatchDataDir, which
+# Get-LangBundleHash reads) and return it as an object.
+function Get-ReleaseInfo {
     New-Item -ItemType Directory -Force -Path $script:PatchDataDir | Out-Null
-
     $versionPath = Join-Path $script:PatchDataDir $script:VersionFile
     Invoke-WebRequest -UseBasicParsing -Uri "$($script:ReleaseBase)/$($script:VersionFile)" -OutFile $versionPath
-    $version = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
-    $pcProp = $version.PSObject.Properties['pc']
-    if (-not $pcProp) { throw 'version.json on the release has no "pc" block yet. Publish the PC build first (maintainer\Publish-PcPatch.ps1).' }
-
-    $want = @{ lang = $version.pc.language_ja_en; inapp = $version.pc.inapp_assets_all_en }
-    $files = @{
-        lang  = Join-Path $script:PatchDataDir $script:LangFileName
-        inapp = Join-Path $script:PatchDataDir $script:InappFileName
+    $version = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $version.PSObject.Properties['pc']) {
+        throw 'version.json on the release has no "pc" block yet. Publish the PC build first (maintainer\Publish-PcPatch.ps1).'
     }
-    $urls = @{
-        lang  = "$($script:ReleaseBase)/$($script:LangFileName)"
-        inapp = "$($script:ReleaseBase)/$($script:InappFileName)"
-    }
-
-    foreach ($k in 'lang','inapp') {
-        $dst = $files[$k]; $exp = $want[$k]
-        $need = $Force -or -not (Test-Path $dst) -or ((Get-Item $dst).Length -ne [int64]$exp.size) -or ((Get-Md5 $dst) -ne $exp.md5)
-        if ($need) {
-            Write-Host "  downloading $(Split-Path $dst -Leaf) ..."
-            Invoke-WebRequest -UseBasicParsing -Uri $urls[$k] -OutFile $dst
-        }
-        $actualSize = (Get-Item $dst).Length
-        $actualMd5  = Get-Md5 $dst
-        if ($actualSize -ne [int64]$exp.size -or $actualMd5 -ne $exp.md5) {
-            throw "Integrity check failed for $(Split-Path $dst -Leaf): size $actualSize/$($exp.size), md5 $actualMd5/$($exp.md5). Re-run with -Force."
-        }
-    }
-    return @{ Version = $version; Files = $files; Want = $want }
+    return $version
 }
 
-# Seed the exact-size EN language bundle into the Unity cache __data (catalog untouched).
+# Optional JSON field (StrictMode-safe): $null when absent.
+function Get-Prop($Obj, [string]$Name) {
+    if ($null -eq $Obj) { return $null }
+    $p = $Obj.PSObject.Properties[$Name]
+    if ($p) { return $p.Value }
+    return $null
+}
+
+# PC patch languages published on the release: English (the historic top-level
+# "pc" block) first, then every "locales.<code>.pc.language" entry built for the
+# SAME game build (its asset hash matches English's); a stale one is not offered.
+# Each item: @{ Code; Name; File; Want = @{ size; md5; hash } }.
+function Get-PcLanguages {
+    param([Parameter(Mandatory)]$Version)
+    $en = $Version.pc.language_ja_en
+    $out = @([pscustomobject]@{ Code = 'en'; Name = 'English'; File = $script:LangFileName; Want = $en })
+    $locs = Get-Prop $Version 'locales'
+    if (-not $locs) { return $out }
+    $enHash = Get-Prop $en 'hash'
+    foreach ($p in $locs.PSObject.Properties) {
+        $code = $p.Name
+        if ($code -eq 'en' -or $code -notmatch '^[A-Za-z0-9_-]{1,16}$') { continue }
+        $w = Get-Prop (Get-Prop $p.Value 'pc') 'language'
+        if (-not $w) { continue }
+        $file = Get-Prop $w 'file'
+        if (-not $file -or $file -notmatch '^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$') { continue }
+        if (-not (Get-Prop $w 'md5') -or -not (Get-Prop $w 'size')) { continue }
+        $hash = Get-Prop $w 'hash'
+        if ($enHash -and $hash -and $hash -ne $enHash) { continue }   # built for another game build
+        $name = Get-Prop $p.Value 'name'
+        if (-not $name) { $name = $code }
+        $out += [pscustomobject]@{ Code = $code; Name = $name; File = $file; Want = $w }
+    }
+    return $out
+}
+
+# Download (if missing or changed) + verify one file from the release.
+function Get-VerifiedFile {
+    param([string]$Name, $Want, [switch]$Force)
+    $dst = Join-Path $script:PatchDataDir $Name
+    $need = $Force -or -not (Test-Path $dst) -or ((Get-Item $dst).Length -ne [int64]$Want.size) -or ((Get-Md5 $dst) -ne $Want.md5)
+    if ($need) {
+        Write-Host "  downloading $Name ..."
+        Invoke-WebRequest -UseBasicParsing -Uri "$($script:ReleaseBase)/$Name" -OutFile $dst
+    }
+    $actualSize = (Get-Item $dst).Length
+    $actualMd5  = Get-Md5 $dst
+    if ($actualSize -ne [int64]$Want.size -or $actualMd5 -ne $Want.md5) {
+        throw "Integrity check failed for ${Name}: size $actualSize/$($Want.size), md5 $actualMd5/$($Want.md5). Re-run with -Force."
+    }
+    return $dst
+}
+
+# Download + verify the chosen language bundle. The 63 MB inapp patch is only
+# fetched with -IncludeInapp: the installer never installs it (it only needs
+# its md5 from version.json to tell a stock inapp file from a patched one).
+function Get-PatchArtifacts {
+    param([Parameter(Mandatory)]$Version, [Parameter(Mandatory)]$Language,
+          [switch]$IncludeInapp, [switch]$Force)
+    $files = @{ lang = Get-VerifiedFile -Name $Language.File -Want $Language.Want -Force:$Force }
+    if ($IncludeInapp) {
+        $files.inapp = Get-VerifiedFile -Name $script:InappFileName -Want $Version.pc.inapp_assets_all_en -Force:$Force
+    }
+    return @{ Version = $Version; Files = $files; Want = @{ lang = $Language.Want; inapp = $Version.pc.inapp_assets_all_en } }
+}
+
+# Seed the exact-size language bundle into the Unity cache __data (catalog untouched).
 function Install-LanguageCache {
     param(
         [Parameter(Mandatory)][string]$LangBundlePath,
@@ -188,7 +230,7 @@ function Install-LanguageCache {
     }
 }
 
-Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-PatchArtifacts, Install-LanguageCache `
+Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Get-PatchArtifacts, Install-LanguageCache `
                     -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir

@@ -126,6 +126,9 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Publish
 # also offer Download: attach a ready-made __data.es built for the current game build
 powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PatchFile path\to\__data_es -Stock path\to\android_stock -Publish
 
+# also offer it on PC: an exact-size, CRC-forged bundle for the current PC build
+powershell -File tools	ranslations\Publish-Locale.ps1 -Locale es -PcPatchFile path	o\language-ja_es.bundle -Publish
+
 # withdraw a language from the app
 powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Publish
 ```
@@ -134,6 +137,9 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Pu
 - `-BuildPatch -Stock … -KeysJson …` builds `__data.<locale>` with the app's own
   AutoPatcher. That bundle is **grown, not exact-size**; test it on a phone before
   publishing.
+- PC: the installer offers a language only when its bundle targets the current PC
+  game build (same asset hash as English), and the bundle must be exactly the
+  English bundle's size (the PC catalog pins it).
 - The app hides a language's Download once the game updates (the patch's
   `stock_md5` no longer matches the release's), leaving Auto-patch.
 - `update_translation.py` rewrites `version.json` on every English release, which

@@ -9,6 +9,7 @@
 
   The zip contains ONLY the user-facing files:
     Install-EnPatch.bat / .ps1   - double-click installer
+    Restore-Japanese.bat         - double-click undo (back to Japanese)
     MT.EnPatch.psm1              - shared helpers the installer imports
     START-HERE.txt               - the 3-step plain-language guide
     README.md                    - the full guide
@@ -50,6 +51,7 @@ $zipPath = Join-Path $OutDir $ZipName
 
 $userFiles = @(
     'Install-EnPatch.bat',
+    'Restore-Japanese.bat',
     'Install-EnPatch.ps1',
     'MT.EnPatch.psm1',
     'START-HERE.txt',
