@@ -76,8 +76,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $translationsRoot = Join-Path $repoRoot 'translations'
 $releaseBase = "https://github.com/$Repo/releases/download/$Release"
 
+# .NET MD5, not Get-FileHash: launched as `powershell -File` from PowerShell 7,
+# Windows PowerShell inherits pwsh's PSModulePath and can't autoload it.
 function Get-Md5([string]$Path) {
-    (Get-FileHash -LiteralPath $Path -Algorithm MD5).Hash.ToLowerInvariant()
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $fs = [System.IO.File]::OpenRead($Path)
+    try { ($md5.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') }) -join '' }
+    finally { $fs.Close(); $md5.Dispose() }
 }
 
 function Fail([string]$Msg) { Write-Host "ERROR: $Msg"; exit 1 }
