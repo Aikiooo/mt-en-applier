@@ -124,6 +124,11 @@ or users can't update over their installed copy.
 
 - **App:** tag `vX.Y.Z` and attach the release build as **`MT-EN-Applier.apk`** (plus
   `INSTALL.md`). The in-app update check depends on both the tag format and the file name.
+  Don't do it by hand: bump `versionName`/`versionCode` in `app/build.gradle`, commit and push
+  `main`, then run [`tools/Release-App.ps1`](tools/Release-App.ps1) (stages and verifies; add
+  `-Notes <file> -Publish` to release). It refuses a dirty/unpushed tree, an existing tag, a
+  version mismatch, or any signing key other than the project's. `INSTALL.md` is versioned at
+  [`docs/INSTALL.md`](docs/INSTALL.md); the script fills in the size/MD5 in the attached copy.
 - **Patch:** the English patch (`__data`, `version.json`, `translation_cache.json`, PC
   bundles) is published to `patch-latest` by the maintainer pipeline;
   [`tools/pc/maintainer/Publish-PcPatch.ps1`](tools/pc/maintainer/Publish-PcPatch.ps1)
