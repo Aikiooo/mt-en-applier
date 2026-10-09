@@ -14,8 +14,29 @@ android {
         versionName "2.4.0"
     }
 
+    // Release signing key lives OUTSIDE the repo (never commit it). Path from the
+    // Gradle property mtReleaseProps, else ~/.android/mt-en-applier-release.properties
+    // (storeFile / storePassword / keyAlias / keyPassword). Without it, release
+    // builds are unsigned. Every published APK must use this same key, or users
+    // can't update over their installed copy.
+    def releaseProps = new File(project.findProperty('mtReleaseProps') ?:
+            "${System.getProperty('user.home')}/.android/mt-en-applier-release.properties")
+    signingConfigs {
+        if (releaseProps.exists()) {
+            release {
+                def p = new Properties()
+                releaseProps.withInputStream { p.load(it) }
+                storeFile file(p.getProperty('storeFile'))
+                storePassword p.getProperty('storePassword')
+                keyAlias p.getProperty('keyAlias')
+                keyPassword p.getProperty('keyPassword')
+            }
+        }
+    }
+
     buildTypes {
         release {
+            if (releaseProps.exists()) signingConfig signingConfigs.release
             minifyEnabled false
             shrinkResources false
         }
