@@ -147,6 +147,10 @@ public class MainActivity extends Activity {
     /** md5 of the newest live bundle from the last read-only check: null = not
      *  checked / unknown, "" = no live bundle, else 32 hex chars. */
     private volatile String liveMd5 = null;
+    /** version.json "patch_md5_history": md5s of earlier English patches, comma-
+     *  separated (the app's JSON reader has no arrays). A live bundle matching one
+     *  is an outdated patch, not a game update. */
+    private volatile String patchHistory = "";
     private String lastLoggedStaleMd5 = null;
     private final java.util.concurrent.atomic.AtomicBoolean liveChecking =
             new java.util.concurrent.atomic.AtomicBoolean(false);
@@ -619,6 +623,9 @@ public class MainActivity extends Activity {
                 setStatus(C_OK, doneLabel, "Launch the game. Re-apply after each game update.");
             } else if (liveState(lang) == LIVE_PATCHED) {
                 setStatus(C_OK, "Patch installed", "Launch the game.");
+            } else if (liveState(lang) == LIVE_OUTDATED) {
+                setStatus(C_WARN, "Older patch installed",
+                        "Tap Download latest patch, then Apply.");
             } else if (liveState(lang) == LIVE_UPDATED) {
                 setStatus(C_WARN, "Game updated — patch not out yet",
                         "Use Auto-patch (beta), or wait for the new patch.");
@@ -656,7 +663,8 @@ public class MainActivity extends Activity {
 
     // ---------------- live bundle check (read-only) ----------------
 
-    private static final int LIVE_UNKNOWN = 0, LIVE_PATCHED = 1, LIVE_STOCK = 2, LIVE_UPDATED = 3;
+    private static final int LIVE_UNKNOWN = 0, LIVE_PATCHED = 1, LIVE_STOCK = 2, LIVE_UPDATED = 3,
+            LIVE_OUTDATED = 4;
 
     /** Classify the last-read live bundle md5 against the published release.
      *  UNKNOWN when not checked, no bundle, no release info, or it holds another
@@ -672,7 +680,11 @@ public class MainActivity extends Activity {
         }
         String stock = langs.get(0).stockMd5;   // top-level stock_md5 (the game's stock pack)
         if (stock.isEmpty()) return LIVE_UNKNOWN;
-        return md5.equalsIgnoreCase(stock) ? LIVE_STOCK : LIVE_UPDATED;
+        if (md5.equalsIgnoreCase(stock)) return LIVE_STOCK;
+        for (String h : patchHistory.split(",")) {
+            if (md5.equalsIgnoreCase(h.trim())) return LIVE_OUTDATED;
+        }
+        return LIVE_UPDATED;
     }
 
     /** md5 of the newest live bundle read via the shell uid: "" if there is no
@@ -737,6 +749,7 @@ public class MainActivity extends Activity {
     private Map<String, Object> saveVersion(String vj) throws Exception {
         Map<String, Object> v = JsonMap.parseObject(vj);
         writeSmall(versionFile(), vj);
+        patchHistory = String.valueOf(v.getOrDefault("patch_md5_history", ""));
         languages = PatchLanguage.fromVersion(v);
         refreshStatus();
         return v;
@@ -746,7 +759,9 @@ public class MainActivity extends Activity {
     private void initLanguages() {
         try {
             if (versionFile().exists()) {
-                languages = PatchLanguage.fromVersion(JsonMap.parseObject(readSmall(versionFile())));
+                Map<String, Object> saved = JsonMap.parseObject(readSmall(versionFile()));
+                patchHistory = String.valueOf(saved.getOrDefault("patch_md5_history", ""));
+                languages = PatchLanguage.fromVersion(saved);
             }
         } catch (Throwable ignored) {
         }
