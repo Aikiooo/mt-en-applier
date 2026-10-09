@@ -115,6 +115,9 @@ public class MainActivity extends Activity {
     private static final String PREF_LANG = "lang";
     /** Language of the staged __data: a code, or STAGED_CUSTOM for a picked file. */
     private static final String PREF_STAGED_LANG = "staged_lang";
+    /** md5 of the last bundle Auto-patch wrote: matches neither the published
+     *  patch nor stock, so the live check must not call it "game updated". */
+    private static final String PREF_AUTOPATCH_MD5 = "autopatch_md5";
     private static final String STAGED_CUSTOM = "custom";
 
     /** Languages published on the release (English first), from version.json. */
@@ -141,6 +144,13 @@ public class MainActivity extends Activity {
     /** Sticky status label after a successful install (null = none yet). */
     private volatile String doneLabel = null;
 
+    /** md5 of the newest live bundle from the last read-only check: null = not
+     *  checked / unknown, "" = no live bundle, else 32 hex chars. */
+    private volatile String liveMd5 = null;
+    private String lastLoggedStaleMd5 = null;
+    private final java.util.concurrent.atomic.AtomicBoolean liveChecking =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private final ServiceConnection connection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
@@ -150,6 +160,7 @@ public class MainActivity extends Activity {
                 log("ERROR: dead binder from Shizuku service.");
             }
             refreshStatus();
+            checkLiveBundle();
         }
 
         @Override
@@ -168,6 +179,7 @@ public class MainActivity extends Activity {
                         shizukuReady = true;
                         refreshStatus();
                         bindService();
+                        checkLiveBundle();
                     } else {
                         log("Shizuku permission denied. Reopen the app to retry.");
                         refreshStatus();
@@ -185,6 +197,7 @@ public class MainActivity extends Activity {
                 + "adb shell settings put global settings_enable_monitor_phantom_procs false");
         shizukuReady = false;
         service = null;
+        liveMd5 = null;
         shizukuHandled = false;
         refreshStatus();
     };
@@ -506,6 +519,7 @@ public class MainActivity extends Activity {
             shizukuReady = true;
             refreshStatus();
             bindService();
+            checkLiveBundle();
         } else {
             log("Requesting Shizuku permission…");
             refreshStatus();
@@ -603,6 +617,11 @@ public class MainActivity extends Activity {
                 setStatus(C_WARN, "Working…", "See the log below.");
             } else if (doneLabel != null) {
                 setStatus(C_OK, doneLabel, "Launch the game. Re-apply after each game update.");
+            } else if (liveState(lang) == LIVE_PATCHED) {
+                setStatus(C_OK, "Patch installed", "Launch the game.");
+            } else if (liveState(lang) == LIVE_UPDATED) {
+                setStatus(C_WARN, "Game updated — patch not out yet",
+                        "Use Auto-patch (beta), or wait for the new patch.");
             } else if (havePatch) {
                 setStatus(C_OK, "Ready — tap Apply", "Patch file: "
                         + (customFile ? "chosen file" : lang.name) + ", " + fmtBytes(patch.length()));
@@ -632,6 +651,60 @@ public class MainActivity extends Activity {
 
     private void end() {
         setBusy(false);
+        checkLiveBundle();
+    }
+
+    // ---------------- live bundle check (read-only) ----------------
+
+    private static final int LIVE_UNKNOWN = 0, LIVE_PATCHED = 1, LIVE_STOCK = 2, LIVE_UPDATED = 3;
+
+    /** Classify the last-read live bundle md5 against the published release.
+     *  UNKNOWN when not checked, no bundle, no release info, or it holds another
+     *  language's patch. */
+    private int liveState(PatchLanguage lang) {
+        String md5 = liveMd5;
+        List<PatchLanguage> langs = languages;
+        if (md5 == null || md5.isEmpty() || langs.isEmpty()) return LIVE_UNKNOWN;
+        if (!lang.patchMd5.isEmpty() && md5.equalsIgnoreCase(lang.patchMd5)) return LIVE_PATCHED;
+        if (md5.equalsIgnoreCase(prefs().getString(PREF_AUTOPATCH_MD5, ""))) return LIVE_PATCHED;
+        for (PatchLanguage l : langs) {
+            if (!l.patchMd5.isEmpty() && md5.equalsIgnoreCase(l.patchMd5)) return LIVE_UNKNOWN;
+        }
+        String stock = langs.get(0).stockMd5;   // top-level stock_md5 (the game's stock pack)
+        if (stock.isEmpty()) return LIVE_UNKNOWN;
+        return md5.equalsIgnoreCase(stock) ? LIVE_STOCK : LIVE_UPDATED;
+    }
+
+    /** md5 of the newest live bundle read via the shell uid: "" if there is no
+     *  bundle, null if md5sum is unavailable or its output isn't a hash. */
+    private String readLiveMd5() throws android.os.RemoteException {
+        String path = newestLiveBundle();
+        if (path == null) return "";
+        String tok = shell("md5sum '" + path + "' 2>/dev/null").out.trim().split("\\s+")[0];
+        return tok.matches("[0-9a-fA-F]{32}") ? tok.toLowerCase(Locale.US) : null;
+    }
+
+    /** Background, read-only: hash the live bundle and refresh the status line.
+     *  Skipped while another operation runs (the caller re-triggers from end()). */
+    private void checkLiveBundle() {
+        if (!isConnected() || busy || languages.isEmpty()) return;
+        if (!liveChecking.compareAndSet(false, true)) return;
+        new Thread(() -> {
+            try {
+                String md5 = readLiveMd5();
+                if (busy) return;   // an operation started meanwhile; end() will re-check
+                liveMd5 = md5;
+                if (liveState(selectedLanguage()) == LIVE_UPDATED && !md5.equals(lastLoggedStaleMd5)) {
+                    lastLoggedStaleMd5 = md5;
+                    log("Game's language pack differs from the published patch (game updated?).");
+                }
+                refreshStatus();
+            } catch (Throwable ignored) {
+                // status simply stays as it was
+            } finally {
+                liveChecking.set(false);
+            }
+        }, "live-check").start();
     }
 
     // ---------------- patch languages ----------------
@@ -683,6 +756,7 @@ public class MainActivity extends Activity {
             } catch (Throwable ignored) {
                 // offline: keep the saved list
             }
+            checkLiveBundle();
         }, "languages").start();
     }
 
@@ -1554,6 +1628,7 @@ public class MainActivity extends Activity {
         }
         File outF = new File(dir, "patched.__data");
         java.nio.file.Files.write(outF.toPath(), res.data);
+        prefs().edit().putString(PREF_AUTOPATCH_MD5, MasterCrypto.md5Hex(res.data).toLowerCase(Locale.US)).apply();
 
         StringBuilder sum = new StringBuilder("Patched " + res.patched + "/" + res.tablesFound + " tables");
         int missing = names.size() - res.tablesFound;
