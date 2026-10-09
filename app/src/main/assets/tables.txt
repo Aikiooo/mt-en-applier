@@ -66,7 +66,6 @@ e_gem
 e_general_text
 e_global_present_type
 e_home_background_name
-e_home_bgm_type
 e_home_talk_subtitle
 e_home_touch_type
 e_how_to_play_text
@@ -138,3 +137,5 @@ e_ui_text
 e_update_notice_text
 e_webshop_text
 e_webview_text
+e_abnormal_name
+e_abnormal_status_text
