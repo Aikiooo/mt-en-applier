@@ -1,16 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Speech bubble with text lines; drawn inside the 66dp adaptive-icon safe zone. -->
+<!-- The MT-DB site favicon (mt_db/web/public/favicon.svg): gold-to-teal border
+     and a gold heavy "M". Drawn in the favicon's 64-unit space, scaled 0.94x
+     and centred so the border stays inside even a round launcher mask. The "M" is a
+     polygon traced to the site's rendering (vectors can't draw text). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,34 H70 A8,8 0 0 1 78,42 V60 A8,8 0 0 1 70,68 H50 L38,78 L40,68 H38 A8,8 0 0 1 30,60 V42 A8,8 0 0 1 38,34 Z" />
-    <path
-        android:strokeColor="#4F8EF7"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:pathData="M39,45 H69 M39,52 H63 M39,59 H55" />
+    <group
+        android:translateX="23.92"
+        android:translateY="23.92"
+        android:scaleX="0.94"
+        android:scaleY="0.94">
+        <path
+            android:strokeWidth="3"
+            android:pathData="M14,3 H50 A11,11 0 0 1 61,14 V50 A11,11 0 0 1 50,61 H14 A11,11 0 0 1 3,50 V14 A11,11 0 0 1 14,3 Z">
+            <aapt:attr name="android:strokeColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="3"
+                    android:startY="3"
+                    android:endX="61"
+                    android:endY="61">
+                    <item android:offset="0" android:color="#E3B554" />
+                    <item android:offset="1" android:color="#5CB8D6" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:fillColor="#E3B554"
+            android:pathData="M17.62,44 V20 H28.3 L32.2,37 L35.95,20 H46.38 V44 H39.38 V25.6 L35,44 H28.25 L23.88,25.8 V44 Z" />
+    </group>
 </vector>
