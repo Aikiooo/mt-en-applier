@@ -987,6 +987,38 @@ public class MainActivity extends Activity {
 
     /** System uninstall prompt; if a ROM still refuses it, open this app's
      *  settings page, which always has an Uninstall button. */
+    /** After a successful install: what to expect in game, and a shortcut to it.
+     *  The game boots on the Japanese text built into its own APK (which no patch
+     *  can change) and only switches to the patched language pack once the title
+     *  screen has loaded, so screens built before that, notably the loading tips,
+     *  stay Japanese until the player returns to the title once. */
+    private void showInstalledDialog(String title) {
+        if (isFinishing()) return;
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+                .setTitle(title)
+                .setMessage("Launch the game: menus, story and skills are now translated.\n\n"
+                        + "Some text, like the loading tips, stays Japanese until you go back "
+                        + "to the title screen once after starting the game. That text is built "
+                        + "into the game app itself, which the patch can't change.")
+                .setPositiveButton("Launch game", (d, w) -> launchGame())
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void launchGame() {
+        Intent launch = getPackageManager().getLaunchIntentForPackage(GAME_PKG);
+        if (launch == null) {
+            log("Couldn't find the game. Is it installed?");
+            return;
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(launch);
+        } catch (Throwable t) {
+            log("Couldn't open the game: " + t.getMessage());
+        }
+    }
+
     private void requestUninstall() {
         Uri pkg = Uri.parse("package:" + getPackageName());
         try {
@@ -1252,6 +1284,7 @@ public class MainActivity extends Activity {
                 log("Launch the game. Re-apply after each game update.");
                 doneLabel = "Patch installed";
                 ui.post(() -> uninstallBtn.setVisibility(View.VISIBLE));
+                ui.post(() -> showInstalledDialog(what + " installed"));
             } else if (fallback) {
                 log("✗ Copy failed. Is the game installed? Open it once so it downloads its data, then retry.");
             } else {
@@ -1664,5 +1697,7 @@ public class MainActivity extends Activity {
         log("✓ Auto-patch installed to " + dests.size()
                 + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");
         doneLabel = lang.isDefault() ? "Auto-patch installed" : lang.name + " auto-patch installed";
+        String title = doneLabel;
+        ui.post(() -> showInstalledDialog(title));
     }
 }

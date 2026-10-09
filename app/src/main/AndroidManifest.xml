@@ -19,6 +19,8 @@
          API can locate its provider and handshake the binder. -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- "Launch game" button after a successful install -->
+        <package android:name="jp.gree_ent.mushoku" />
         <provider android:authorities="moe.shizuku.privileged.api.shizuku" />
     </queries>
 
