@@ -30,10 +30,13 @@ param(
     [Parameter(Mandatory)][string]$Cache,
     [string]$Locale,
     [string]$Canonical,
-    [string]$OutRoot = (Join-Path $PSScriptRoot '..\..\translations')
+    [string]$OutRoot
 )
 
 $ErrorActionPreference = 'Stop'
+# Resolved here, not as a param default: Windows PowerShell 5.1 leaves
+# $PSScriptRoot empty in param defaults of a script with [Parameter()] attributes.
+if (-not $OutRoot) { $OutRoot = Join-Path $PSScriptRoot '..\..\translations' }
 
 $localesPath = Join-Path $OutRoot 'locales.json'
 if (-not (Test-Path -LiteralPath $localesPath)) { throw "missing locale registry: $localesPath" }
