@@ -52,6 +52,10 @@ the patched language bundle (`__data`) over the game's UnityCache copy.
   game's asset-hash cache subfolder changes on some updates, and a mirrored copy
   lives under `files/il2cpp/<m>/UnityCache/Shared` — the app globs both roots and
   patches every live copy found (falls back to the known v1.0.5 path with a warning).
+- **Update check:** on launch the app looks for a newer app release and shows a
+  "Get update" banner. It picks the highest `vX.Y.Z` release (not drafts or
+  prereleases) that has an `MT-EN-Applier.apk` asset, so keep that tag format and
+  asset name when releasing.
 - **Patch languages:** a language picker appears once the release publishes more
   than English (see [`translations/README.md`](translations/README.md#publishing-a-language-to-the-app)).
   A language with a ready-made bundle can be downloaded; one without is built on the

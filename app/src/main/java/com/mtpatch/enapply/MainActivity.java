@@ -80,6 +80,12 @@ public class MainActivity extends Activity {
     private static final int REQ_PICK_FILE = 1002;
     private static final String SHIZUKU_PKG = "moe.shizuku.privileged.api";
 
+    /** App releases are tagged vX.Y.Z and carry APK_ASSET (see checkForAppUpdate). */
+    private static final String RELEASES_API =
+            "https://api.github.com/repos/Aikiooo/mt-en-applier/releases?per_page=30";
+    private static final String RELEASES_PAGE = "https://github.com/Aikiooo/mt-en-applier/releases";
+    private static final String APK_ASSET = "MT-EN-Applier.apk";
+
     private static final String AUTO_PATCH_ADVICE =
             "Use \"Download latest patch\" once a build is published for this game version.";
 
@@ -113,7 +119,9 @@ public class MainActivity extends Activity {
 
     /** Languages published on the release (English first), from version.json. */
     private volatile List<PatchLanguage> languages = new ArrayList<>();
-    private LinearLayout langRow;
+    private LinearLayout langRow, updateCard;
+    private TextView updateText;
+    private volatile String updatePageUrl;
     private TextView langValue, langHint;
 
     private TextView logText;
@@ -217,6 +225,29 @@ public class MainActivity extends Activity {
         subtitle.setTextColor(C_TEXT_DIM);
         subtitle.setPadding(0, dp(2), 0, dp(12));
         root.addView(subtitle);
+
+        // ---- app update banner (hidden until a newer release is found) ----
+        updateCard = new LinearLayout(this);
+        updateCard.setOrientation(LinearLayout.HORIZONTAL);
+        updateCard.setGravity(Gravity.CENTER_VERTICAL);
+        updateCard.setPadding(dp(14), dp(10), dp(10), dp(10));
+        updateCard.setBackground(rounded(C_SURFACE, C_ACCENT, 12));
+        updateText = new TextView(this);
+        updateText.setTextSize(14);
+        updateText.setTextColor(C_TEXT);
+        updateCard.addView(updateText, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Button updateBtn = makeButton("Get update", BTN_PRIMARY, v -> openUpdatePage());
+        updateBtn.setTextSize(14);
+        LinearLayout.LayoutParams ubLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(40));
+        ubLp.leftMargin = dp(8);
+        updateCard.addView(updateBtn, ubLp);
+        updateCard.setVisibility(View.GONE);
+        LinearLayout.LayoutParams ucLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        ucLp.bottomMargin = dp(8);
+        root.addView(updateCard, ucLp);
 
         // ---- status card: colored dot + short label (tap for diagnostics) ----
         LinearLayout statusCard = new LinearLayout(this);
@@ -384,6 +415,7 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         initLanguages();
+        checkForAppUpdate();
         refreshStatus();
 
         try {
@@ -686,12 +718,87 @@ public class MainActivity extends Activity {
         return Math.round(v * getResources().getDisplayMetrics().density);
     }
 
-    private String versionSuffix() {
+    private String installedVersion() {
         try {
-            return " · v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
         } catch (Throwable t) {
-            return "";
+            return null;
         }
+    }
+
+    // ---------------- app update check ----------------
+
+    /** Quiet launch-time check: highest vX.Y.Z release that carries the APK.
+     *  Doesn't trust GitHub's "Latest" flag (a PC or patch release can take it). */
+    private void checkForAppUpdate() {
+        String current = installedVersion();
+        if (current == null) return;
+        new Thread(() -> {
+            try {
+                org.json.JSONArray rels = new org.json.JSONArray(
+                        Downloader.fetchString(RELEASES_API, s -> {}));
+                String bestTag = null, bestUrl = null;
+                for (int i = 0; i < rels.length(); i++) {
+                    org.json.JSONObject r = rels.getJSONObject(i);
+                    if (r.optBoolean("draft") || r.optBoolean("prerelease")) continue;
+                    String tag = r.optString("tag_name");
+                    if (!tag.matches("v\\d+(\\.\\d+){0,2}")) continue;
+                    org.json.JSONArray assets = r.optJSONArray("assets");
+                    boolean hasApk = false;
+                    for (int j = 0; assets != null && j < assets.length(); j++) {
+                        if (APK_ASSET.equals(assets.getJSONObject(j).optString("name"))) hasApk = true;
+                    }
+                    if (!hasApk) continue;
+                    if (bestTag == null || compareVersions(tag.substring(1), bestTag.substring(1)) > 0) {
+                        bestTag = tag;
+                        bestUrl = r.optString("html_url");
+                    }
+                }
+                if (bestTag == null || compareVersions(bestTag.substring(1), current) <= 0) return;
+                String tag = bestTag, url = bestUrl;
+                ui.post(() -> {
+                    updatePageUrl = url;
+                    updateText.setText("Update available: " + tag + " (you have v" + current + ")");
+                    updateCard.setVisibility(View.VISIBLE);
+                });
+            } catch (Throwable ignored) {
+                // offline / rate-limited: try again next launch
+            }
+        }, "update-check").start();
+    }
+
+    /** Numeric dotted compare ("2.10" > "2.9"); missing parts count as 0. */
+    private static int compareVersions(String a, String b) {
+        String[] x = a.split("\\."), y = b.split("\\.");
+        for (int i = 0; i < Math.max(x.length, y.length); i++) {
+            int p = i < x.length ? parseIntSafe(x[i]) : 0;
+            int q = i < y.length ? parseIntSafe(y[i]) : 0;
+            if (p != q) return Integer.compare(p, q);
+        }
+        return 0;
+    }
+
+    private static int parseIntSafe(String s) {
+        try {
+            return Integer.parseInt(s.replaceAll("[^0-9].*$", ""));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private void openUpdatePage() {
+        String url = updatePageUrl != null && updatePageUrl.startsWith("https://github.com/")
+                ? updatePageUrl : RELEASES_PAGE;
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (android.content.ActivityNotFoundException e) {
+            log("No browser found. Get the update at " + RELEASES_PAGE);
+        }
+    }
+
+    private String versionSuffix() {
+        String v = installedVersion();
+        return v == null ? "" : " · v" + v;
     }
 
     private GradientDrawable rounded(int fill, int stroke, int radiusDp) {
