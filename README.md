@@ -63,7 +63,7 @@ irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/inst
 
 Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game update.
 
-- **Fully English on the first load (optional, ~300 MB).** Add `-WithAssets`: it
+- **Fully English on the first load (optional, ~105 MB).** Add `-WithAssets`: it
   rewrites the text the game itself ships (the cached UI prefabs and the in-app
   bundle behind the first-load title screen), so nothing stays Japanese until a
   second load. It installs a small watcher for the in-app half and writes

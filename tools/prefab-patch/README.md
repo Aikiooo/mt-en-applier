@@ -67,7 +67,7 @@ Install-EnPatch.ps1 -WithAssets     # or -Prefabs / -FirstLoad
 Install-EnPatch.ps1 -Restore
 ```
 
-- `-Prefabs` downloads `prefab-patch.zip` (~230 MB, the bundles are already compressed),
+- `-Prefabs` downloads `prefab-patch.zip` (~40 MB: the bundles are already compressed),
   unpacks it to `%LOCALAPPDATA%\MT-EN-Applier\pc\prefab-patch` and installs it with
   `tools\pc\Install-PrefabPatch.ps1` (md5-gated per bundle, originals backed up).
 - `-FirstLoad` downloads the in-app bundle, writes the metadata

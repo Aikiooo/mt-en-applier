@@ -29,7 +29,8 @@ English in-app bundle the first load's title screen reads:
 & ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets
 ```
 
-It is opt-in because it rewrites files the game ships (~300 MB download), and
+It is opt-in because it rewrites files the game ships (~105 MB download: 40 MB of
+prefabs + 64 MB in-app + the language bundle), and
 because the in-app half cannot stay installed: DMM verifies that file before it
 starts the game, so a small watcher swaps it in as the game starts and puts the
 stock file back on exit. The installer starts that watcher for the current
