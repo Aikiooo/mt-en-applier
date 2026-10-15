@@ -68,7 +68,7 @@ anything about PowerShell or command lines. Just follow the 3 steps.
   Without this, the very first screen after launching is partly
   Japanese until you go back to the title menu once. This extra
   step removes that. It rewrites text the game ships itself, so
-  it is separate, and it downloads about 300 MB:
+  it is separate, and it downloads about 105 MB:
 
   1. Open a terminal in this folder (Shift+right-click the folder ->
      "Open PowerShell window here") and run:
