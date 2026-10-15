@@ -123,7 +123,9 @@ A title-update usually refreshes the game's cached language bundle, wiping the p
 - Double-click **`Restore-Japanese.bat`** (or run the installer with `-Restore`). It removes
   the patched language pack, puts the Japanese UI prefabs back and cleans up any in-app
   swap left behind; the game re-downloads the Japanese one on the title screen.
-- Optionally delete `%LOCALAPPDATA%\MT-EN-Applier\pc\` (downloads + stock snapshots).
+- Optionally delete `%LOCALAPPDATA%\MT-EN-Applier\pc\` — only *after* a successful
+  `-Restore`, since it holds the original bundles the prefab restore needs. `-Restore`
+  also clears `…\mt-en-staging` next to the game folder.
 
 ## Troubleshooting
 

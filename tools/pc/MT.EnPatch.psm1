@@ -3,6 +3,12 @@
 
 Set-StrictMode -Version Latest
 
+# Windows PowerShell 5.1 can default to TLS 1.0; GitHub needs 1.2. Set here as
+# well as in install.ps1: every download this module makes runs in the child
+# process the one-liner spawns, which does not inherit the parent's setting.
+[Net.ServicePointManager]::SecurityProtocol =
+    [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
 # --- constants (module scope) -------------------------------------------------
 $script:Repo          = 'Aikiooo/mt-en-applier'
 $script:Release       = 'patch-latest'
@@ -29,18 +35,25 @@ $script:LangBundleSize = 1898964
 $script:PatchDataDir = Join-Path $env:LOCALAPPDATA 'MT-EN-Applier\pc'
 
 # Resolve the non-ASCII Unity publisher cache dir ("GREE Entertainment_<クロエコ>")
-# by searching the usual LocalLow locations.
+# by searching the usual LocalLow locations. When several match, the one that
+# holds the language bundle's own folder is the game's: taking the first one
+# would seed the wrong cache.
 function Get-UnityCachePublisherDir {
     $candidates = @(
         (Join-Path $env:LOCALAPPDATA 'Low\Unity'),
         (Join-Path $env:USERPROFILE 'AppData\LocalLow\Unity'),
         (Join-Path (Split-Path $env:APPDATA -Parent) 'LocalLow\Unity')
     ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+    $pubs = @()
     foreach ($root in $candidates) {
-        $pub = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
-               Where-Object { $_.Name -like 'GREE Entertainment*' } | Select-Object -First 1
-        if ($pub) { return $pub.FullName }
+        $pubs += @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -like 'GREE Entertainment*' })
     }
+    $pubs = @($pubs | Select-Object -Unique)
+    foreach ($p in $pubs) {
+        if (Test-Path -LiteralPath (Join-Path $p.FullName $script:LangBundleGuid)) { return $p.FullName }
+    }
+    if ($pubs.Count) { return $pubs[0].FullName }
     return $null
 }
 
@@ -175,9 +188,9 @@ function Get-PcLanguages {
 
 # Download one file from the release, resuming a partial download when there is
 # one. curl.exe ships with Windows 10 1803+ and is the only resumable option in
-# Windows PowerShell 5.1 - the prefab zip is a few hundred MB, so a dropped
-# connection must not restart it. Invoke-WebRequest is the fallback (no resume,
-# and 5.1 throttles it badly unless progress is silenced).
+# Windows PowerShell 5.1 - the in-app bundle is 63 MB and the prefab zip 40 MB,
+# so a dropped connection must not restart them. Invoke-WebRequest is the
+# fallback (no resume, and 5.1 throttles it badly unless progress is silenced).
 function Get-RemoteFile {
     param([Parameter(Mandatory)][string]$Uri, [Parameter(Mandatory)][string]$Destination)
     $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
@@ -196,20 +209,29 @@ function Get-RemoteFile {
 function Get-VerifiedFile {
     param([string]$Name, $Want, [switch]$Force)
     $dst = Join-Path $script:PatchDataDir $Name
+    $part = "$dst.part"
     $need = $Force -or -not (Test-Path $dst) -or ((Get-Item $dst).Length -ne [int64]$Want.size) -or ((Get-Md5 $dst) -ne $Want.md5)
     if ($need) {
-        # Resume only a file that is short of the expected size; a complete but
-        # wrong file would otherwise be resumed from its end and stay wrong.
-        if ((Test-Path -LiteralPath $dst) -and ((Get-Item $dst).Length -ge [int64]$Want.size)) {
-            Remove-Item -LiteralPath $dst -Force
+        # A complete file left by an older release can be shorter than this one,
+        # and resuming onto it would append the new tail to the old bytes. Only
+        # the .part file of an interrupted attempt is ever resumed, and it is
+        # discarded first if it is not smaller than what is expected.
+        if ((Test-Path -LiteralPath $part) -and ((Get-Item $part).Length -ge [int64]$Want.size)) {
+            Remove-Item -LiteralPath $part -Force
         }
-        Write-Host "  downloading $Name ($([math]::Round([int64]$Want.size / 1MB, 1)) MB) ..."
-        Get-RemoteFile -Uri "$($script:ReleaseBase)/$Name" -Destination $dst
+        if (Test-Path -LiteralPath $part) { Write-Host "  resuming $Name ..." }
+        else { Write-Host "  downloading $Name ($([math]::Round([int64]$Want.size / 1MB, 1)) MB) ..." }
+        Get-RemoteFile -Uri "$($script:ReleaseBase)/$Name" -Destination $part
+        Move-Item -LiteralPath $part -Destination $dst -Force
     }
     $actualSize = (Get-Item $dst).Length
     $actualMd5  = Get-Md5 $dst
     if ($actualSize -ne [int64]$Want.size -or $actualMd5 -ne $Want.md5) {
-        throw "Integrity check failed for ${Name}: size $actualSize/$($Want.size), md5 $actualMd5/$($Want.md5). Re-run with -Force."
+        # Drop it rather than leaving a file whose size matches but whose bytes
+        # do not: the next run then downloads it again instead of failing.
+        Remove-Item -LiteralPath $dst -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+        throw "Integrity check failed for ${Name}: size $actualSize/$($Want.size), md5 $actualMd5/$($Want.md5). Re-run the installer; it will download it again."
     }
     return $dst
 }

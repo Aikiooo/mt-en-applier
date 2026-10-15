@@ -8,7 +8,7 @@
 #
 # Full first-load fix (rewrites the game's own shipped text, so it is opt-in):
 #   ... | iex   then   & ([scriptblock]::Create((irm .../install.ps1))) -WithAssets
-# -WithAssets is -Prefabs (English text baked into the cached UI prefabs, ~230 MB
+# -WithAssets is -Prefabs (English text baked into the cached UI prefabs, ~40 MB
 # download) plus -FirstLoad (the English in-app bundle for the first load's title
 # screen, swapped in per session by Watch-InappSwap.ps1). Either can be used alone.
 #
