@@ -88,6 +88,8 @@ The installer seeds the language bundle into the game's Unity cache — that's t
 
 Some screens only pull their text on the first load. If you see a stray Japanese line, **go back to the title menu and re-enter** — the second load renders fully in English. This matches the Android behaviour (see the root README).
 
+A fix exists for PC: an English in-app bundle, swapped in while the game runs, plus English text baked into the cached UI prefabs. See [`tools/prefab-patch/README.md`](../prefab-patch/README.md). It isn't part of the one-command installer yet.
+
 ## After a game update
 
 A title-update usually refreshes the game's cached language bundle, wiping the patch. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then click Play in DMM again.
