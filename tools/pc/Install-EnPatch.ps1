@@ -11,8 +11,11 @@
   - Captures clean stock copies (inapp bundle + boot.config) so DMM file
     repairs stay reversible.
 
-  With -Prefabs / -FirstLoad (or both at once: -WithAssets) it also rewrites the
-  game's own shipped text, which is why those are opt-in and English-only:
+  It also rewrites the text the game ships itself, which is the part that makes
+  the first load English instead of "load twice". That is a bigger download and
+  it touches the game's own files, so it asks first: the question defaults to
+  yes, and sixty seconds of silence means yes as well, so the one-line install
+  still ends up fully English.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
     to the language bundle (~40 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
@@ -22,18 +25,21 @@
     starting the game, so it can only be in place while the game runs: the
     watcher swaps it in as the game starts and puts the stock file back on exit.
     Run it before each session through the generated Play-in-English.cmd.
+  Both are English-only, so a non-English -Language skips them silently.
+  -WithAssets answers the question up front; -LanguageOnly refuses it.
 
   Languages: only the ones published for the current game build are offered.
-  With one (English) there is no prompt; with several, a short menu appears
+  With one (English) there is no menu; with several, a short menu appears
   (default: last choice, else the Windows display language, else English) and
   the choice is remembered for the next run. -Language skips the menu.
 
   Run this once. After that, just click Play in DMM GAME PLAYER (through
-  Play-in-English.cmd per session if -FirstLoad was used).
+  Play-in-English.cmd per session if the in-app half is installed).
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1
-  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -WithAssets        # full first-load fix
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1                  # asks, default yes
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -WithAssets      # no question, full install
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -LanguageOnly    # language bundle only
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -GameDir 'D:\Games\mushoku_coe_cl' -Force
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -Language es
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -Check     # report only, change nothing
@@ -54,6 +60,8 @@ param(
     [switch]$FirstLoad,
     # -Prefabs + -FirstLoad.
     [switch]$WithAssets,
+    # Language bundle only: no prompt, no asset patching.
+    [switch]$LanguageOnly,
     # Do not start the watcher (used by -Check; the caller may do it itself).
     [switch]$NoWatcher
 )
@@ -63,6 +71,40 @@ $here = $PSScriptRoot      # absolute even when invoked as -File tools\pc\...
 Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 
 if ($WithAssets) { $Prefabs = $true; $FirstLoad = $true }
+if ($LanguageOnly) { $Prefabs = $false; $FirstLoad = $false }
+
+# Ask before doing the part that rewrites the game's own shipped text, but never
+# block a run without a console on it: the default is yes, and 60 seconds of
+# silence means yes too.
+function Read-YesNo([string]$Question, [int]$TimeoutSec, [bool]$Default) {
+    if (-not ([Environment]::UserInteractive) -or [Console]::IsInputRedirected) {
+        Write-Host "$Question -> yes (nothing to ask on)"
+        return $Default
+    }
+    Write-Host ''
+    Write-Host "  $Question"
+    try {
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while ((Get-Date) -lt $deadline) {
+            $left = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+            Write-Host ("`r    [Y] yes (default)   [N] no    ... $left s   ") -NoNewline
+            if ([Console]::KeyAvailable) {
+                $k = [Console]::ReadKey($true)
+                Write-Host ''
+                if ($k.Key -eq 'Enter' -or $k.Key -eq 'Y') { return $true }
+                if ($k.Key -eq 'N') { return $false }
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    } catch {
+        Write-Host ''
+        Write-Host "  (could not read the console: $($_.Exception.Message))"
+        return $Default
+    }
+    Write-Host ''
+    Write-Host "  no answer in $TimeoutSec s -> yes"
+    return $Default
+}
 
 $prefabDir = Join-Path $PatchDataDir 'prefab-patch'
 $inappCmd = Join-Path $PatchDataDir 'Play-in-English.cmd'
@@ -385,6 +427,14 @@ then run this again. (If the game is already up to date, the patch for the new
 version isn't out yet. -Force installs anyway.)
 "@
     exit 1
+}
+
+# Ask before the part that rewrites the game's own shipped text. Skipped when the
+# caller already decided (-WithAssets / -Prefabs / -FirstLoad, or -LanguageOnly),
+# when the language is not English, and in -Check mode.
+if ($chosen.Code -eq 'en' -and -not ($Prefabs -or $FirstLoad) -and -not $LanguageOnly) {
+    $full = Read-YesNo 'Also install the full English UI text? (rewrites the text the game ships: the cached UI prefabs and the first-load screen; ~105 MB)' 60 $true
+    if ($full) { $Prefabs = $true; $FirstLoad = $true }
 }
 
 # Remember the choice and the folder that was found: the watcher falls back to

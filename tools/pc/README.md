@@ -20,29 +20,36 @@ To check first without changing anything:
 `& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -Check`
 (`-GameDir 'D:\Games\mushoku_coe_cl'` works the same way if the game isn't found.)
 
-**Fully English on the first load (optional, PC only).** The command above leaves
-a few screens Japanese until you go back to the title menu once. Two extra pieces
-remove that — the English text baked into the game's cached UI prefabs, and the
-English in-app bundle the first load's title screen reads:
+**Fully English on the first load (PC only).** Without the extra pieces, a few
+screens stay Japanese until you go back to the title menu once. Two of them fix
+that — the English text baked into the game's cached UI prefabs, and the English
+in-app bundle the first load's title screen reads — and the installer **asks**
+before doing it:
 
-```powershell
-& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets
+```
+Also install the full English UI text? (rewrites the text the game ships: the
+cached UI prefabs and the first-load screen; ~105 MB)
+    [Y] yes (default)   [N] no    ... 60 s
 ```
 
-It is opt-in because it rewrites files the game ships (~105 MB download: 40 MB of
-prefabs + 64 MB in-app + the language bundle), and
-because the in-app half cannot stay installed: DMM verifies that file before it
-starts the game, so a small watcher swaps it in as the game starts and puts the
-stock file back on exit. The installer starts that watcher for the current
-session and writes **`Play-in-English.cmd`**
-(`%LOCALAPPDATA%\MT-EN-Applier\pc`) — use it for later sessions, then click Play.
-`-Prefabs` and `-FirstLoad` do the two halves on their own.
+Yes is the default, and sixty seconds of silence means yes, so a plain run ends
+up fully English either way. Answer it up front instead with `-WithAssets` (no
+question) or `-LanguageOnly` (language bundle only); `-Prefabs` and `-FirstLoad`
+are the two halves.
+
+It asks because it rewrites files the game ships (~105 MB: 40 MB of prefabs +
+61 MB in-app + the language bundle), and because the in-app half cannot stay
+installed — DMM verifies that file before it starts the game, so a small watcher
+swaps it in as the game starts and puts the stock file back on exit. The
+installer starts that watcher for the current session and writes
+**`Play-in-English.cmd`** (`%LOCALAPPDATA%\MT-EN-Applier\pc`) — use it for later
+sessions, then click Play.
 
 **Or use the ready-to-use zip** (no command line at all):
 
 1. **Download** the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) and extract it anywhere.
-2. Double-click **`Install-EnPatch.bat`** — once. It does everything.
-3. Click **Play** in DMM GAME PLAYER and play in English. The language bundle stays patched in the game's cache until the game updates.
+2. Double-click **`Install-EnPatch.bat`** — once. It asks one question (full English UI text? default yes, 60 s), then does everything.
+3. Click **Play** in DMM GAME PLAYER and play in English. The language bundle stays patched in the game's cache until the game updates; if the in-app half was installed, start the game with `Play-in-English.cmd` instead.
 
 Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
 (Or read the same guide in your browser: https://www.mtcoe.com/#/en-patch.)

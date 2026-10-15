@@ -63,14 +63,15 @@ irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/inst
 
 Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game update.
 
-- **Fully English on the first load (optional, ~105 MB).** Add `-WithAssets`: it
-  rewrites the text the game itself ships (the cached UI prefabs and the in-app
-  bundle behind the first-load title screen), so nothing stays Japanese until a
-  second load. It installs a small watcher for the in-app half and writes
-  `Play-in-English.cmd` — start the game with that, then click Play, so the English
-  file is in place while DMM's own file check still sees the stock one.
-  **[`tools/pc/README.md`](tools/pc/README.md)** has the one-liner form and the
-  details; `-Prefabs` / `-FirstLoad` do the two halves on their own.
+- **Fully English on the first load (default, PC only).** The installer asks one
+  question — *also install the full English UI text?* — and yes is the default, as
+  is 60 seconds of silence. That rewrites the text the game itself ships (the
+  cached UI prefabs and the in-app bundle behind the first-load title screen), so
+  nothing stays Japanese until a second load; it costs ~105 MB.
+  `-WithAssets` answers yes up front, `-LanguageOnly` no. Because the in-app half
+  can't stay installed (DMM verifies that file before launching), a small watcher
+  swaps it in per session: start the game with `Play-in-English.cmd`, then click
+  Play. **[`tools/pc/README.md`](tools/pc/README.md)** has the details.
 - **No terminal?** Download the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases/tag/pc-v1),
   extract it and double-click `Install-EnPatch.bat`. `START-HERE.txt` inside is the
   whole guide.

@@ -57,12 +57,16 @@ py -I -X utf8 tools\prefab-patch\build_inapp.py --language-bundle language-ja_en
 
 ## Install (player)
 
-Wired into the normal installer. Either flag works on its own; `-WithAssets` is both:
+Wired into the normal installer, which asks one question (default yes, 60 s of
+silence means yes) before touching the game's own shipped text:
 
 ```powershell
-Install-EnPatch.ps1 -WithAssets     # or -Prefabs / -FirstLoad
+Install-EnPatch.ps1                # asks, then installs both halves
+Install-EnPatch.ps1 -WithAssets    # no question: both halves
+Install-EnPatch.ps1 -LanguageOnly  # no question: language bundle only
+Install-EnPatch.ps1 -Prefabs       # one half on its own
 # one-line, no download of the zip:
-& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets
+& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1)))
 # back to Japanese (undoes both halves):
 Install-EnPatch.ps1 -Restore
 ```

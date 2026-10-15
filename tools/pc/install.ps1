@@ -6,8 +6,12 @@
 # With options (-Language <code>, -GameDir <folder>, -Check, -Restore, -Force):
 #   & ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -Check
 #
-# Full first-load fix (rewrites the game's own shipped text, so it is opt-in):
-#   ... | iex   then   & ([scriptblock]::Create((irm .../install.ps1))) -WithAssets
+# The installer asks whether to also rewrite the text the game ships (the cached
+# UI prefabs and the first-load screen, ~105 MB). The question defaults to yes,
+# and sixty seconds of silence means yes, so plain `| iex` still ends up fully
+# English. Answer it up front instead:
+#   & ([scriptblock]::Create((irm .../install.ps1))) -WithAssets     # yes, no question
+#   & ([scriptblock]::Create((irm .../install.ps1))) -LanguageOnly   # no, language bundle only
 # -WithAssets is -Prefabs (English text baked into the cached UI prefabs, ~40 MB
 # download) plus -FirstLoad (the English in-app bundle for the first load's title
 # screen, swapped in per session by Watch-InappSwap.ps1). Either can be used alone.
@@ -22,7 +26,7 @@
 
 & {
     param([string]$GameDir, [string]$Language, [switch]$Force, [switch]$Check, [switch]$Restore,
-          [switch]$Prefabs, [switch]$FirstLoad, [switch]$WithAssets)
+          [switch]$Prefabs, [switch]$FirstLoad, [switch]$WithAssets, [switch]$LanguageOnly)
 
     $ErrorActionPreference = 'Stop'
     # Windows PowerShell 5.1 can default to TLS 1.0; GitHub needs 1.2.
@@ -54,5 +58,6 @@
     if ($Prefabs) { $a += '-Prefabs' }
     if ($FirstLoad) { $a += '-FirstLoad' }
     if ($WithAssets) { $a += '-WithAssets' }
+    if ($LanguageOnly) { $a += '-LanguageOnly' }
     & (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @a
 } @args

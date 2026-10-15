@@ -46,52 +46,49 @@ anything about PowerShell or command lines. Just follow the 3 steps.
 
         Install-EnPatch.bat
 
-  A window opens and does everything by itself. When it says
-  "Install complete", press any key to close it.
+  A window opens. It asks ONE question:
+
+        Also install the full English UI text? ...
+            [Y] yes (default)   [N] no    ... 60 s
+
+  Just press Enter, or wait - after 60 seconds it goes ahead with
+  yes anyway. That is what makes the first screen English instead
+  of partly Japanese; it downloads about 105 MB. Answer N if you
+  would rather have the smaller, language-only patch.
+
+  When it says "Install complete", press any key to close it.
 
   (You only do this again if the game gets an update.)
 
 
   STEP 2 - play
   ------------------------------------------------------------
-  Click PLAY in DMM GAME PLAYER and play. Nothing else needed.
+  Click PLAY in DMM GAME PLAYER and play.
+
+  If you answered yes above, start the game with Play-in-English.cmd
+  from now on (see STEP 3) - that is what swaps the English in-app
+  file in before the game reads it.
 
   The patch is already in the game's cache, so it stays applied
   until the game updates. If English disappears (game update or a
   DMM file repair), just double-click Install-EnPatch.bat again.
 
-  That's it. The game is in English.
 
-
-  STEP 3 - OPTIONAL: make the FIRST load English too
+  STEP 3 - (only if you answered "yes") starting the game later
   ------------------------------------------------------------
-  Without this, the very first screen after launching is partly
-  Japanese until you go back to the title menu once. This extra
-  step removes that. It rewrites text the game ships itself, so
-  it is separate, and it downloads about 105 MB:
+  From now on, launch the game like this instead of clicking PLAY
+  first:
 
-  1. Open a terminal in this folder (in Explorer: right-click the
-     folder -> "Open in Terminal", or Shift+right-click ->
-     "Open PowerShell window here"), then run:
+      double-click Play-in-English.cmd
 
-        .\Install-EnPatch.bat -WithAssets
+  It lives in %LOCALAPPDATA%\MT-EN-Applier\pc - paste that into the
+  Explorer address bar to get there. It swaps the English in-app
+  file in, then you click PLAY in DMM. It puts the Japanese file
+  back when you close the game (DMM always wants to see its own
+  file first), so the next session needs it again.
 
-     (The ".\" matters in PowerShell: without it Windows looks for
-     the command in your PATH and does not find it.)
-     (or, from any PowerShell, the one-liner with -WithAssets:
-        & ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets )
-  2. Wait for "Install complete". It already started the watcher
-     for this session, so you can click PLAY in DMM right away.
-  3. For later sessions, start the game by double-clicking
-     Play-in-English.cmd (in %LOCALAPPDATA%\MT-EN-Applier\pc):
-     that is what swaps the English in-app file in, then click
-     PLAY in DMM. It puts the Japanese file back when you close
-     the game — DMM always wants to see its own file first.
-     (Clicking PLAY directly works too; only the very first
-     screen stays partly Japanese.)
-
-  Both halves are optional and independent: -Prefabs alone, or
-  -FirstLoad alone, do half of this if you want less to download.
+  Clicking PLAY directly still works; you just lose the English on
+  the very first screen of that session.
 
 
 ===============================================================
