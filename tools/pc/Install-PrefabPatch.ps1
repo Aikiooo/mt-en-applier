@@ -40,8 +40,9 @@ if (Get-Process -Name $GameProcessName -ErrorAction SilentlyContinue) { Write-Ho
 $cache = Get-UnityCachePublisherDir
 if (-not $cache) { Write-Host 'Unity cache not found. Launch the game once to the title screen.'; exit 1 }
 
-$n = [ordered]@{ installed = 0; already = 0; restored = 0; skipped = 0; missing = 0 }
+$n = [ordered]@{ installed = 0; already = 0; restored = 0; skipped = 0; missing = 0; nobackup = 0 }
 $skipped = @()
+$notBackedUp = @()
 foreach ($e in $manifest) {
     $rel    = $e.rel -replace '/', '\'
     $target = Join-Path $cache $rel
@@ -50,10 +51,18 @@ foreach ($e in $manifest) {
     $cur = Get-Md5 $target
 
     if ($Restore) {
-        if ($cur -eq $e.out_md5 -and (Test-Path -LiteralPath $backup)) {
-            if (-not $Check) { Copy-Item -LiteralPath $backup -Destination $target -Force }
-            $n.restored++
+        if ($cur -ne $e.out_md5) {
+            # Ours is gone: either the game put its own copy back, or an update
+            # replaced the bundle (that one is no longer ours to restore).
+            if ($cur -eq $e.src_md5) { $n.already++ } else { $n.skipped++; $skipped += $e.rel }
+            continue
         }
+        if (-not (Test-Path -LiteralPath $backup)) { $n.nobackup++; $notBackedUp += $e.rel; continue }
+        if (-not $Check) {
+            Copy-Item -LiteralPath $backup -Destination $target -Force
+            if ((Get-Md5 $target) -ne $e.src_md5) { throw "Restore verification failed: $target" }
+        }
+        $n.restored++
         continue
     }
     if ($cur -eq $e.out_md5) { $n.already++; continue }
@@ -76,4 +85,8 @@ $n.GetEnumerator() | ForEach-Object { Write-Host ('  {0,-10} {1}' -f $_.Key, $_.
 if ($skipped) {
     Write-Host 'Changed by a game update since the patch was built (rebuild for these):'
     $skipped | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
+}
+if ($notBackedUp) {
+    Write-Host 'Patched by us but with no backup saved (cannot restore these by hand):'
+    $notBackedUp | Select-Object -First 20 | ForEach-Object { Write-Host "  $_" }
 }
