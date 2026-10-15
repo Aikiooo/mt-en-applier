@@ -44,6 +44,8 @@ param(
     # bundle's current asset hash or fresh PC installs seed the wrong folder.
     [string]$LangBundleHash = '515508ac386204f43f28aea20ba4e470',
     [string]$OutDir = (Join-Path $env:TEMP 'mt-pc-patch-release'),
+    # Skips BOTH checks that need the local cache: the prefab source md5s and the
+    # language build the cache is running.
     [switch]$SkipCacheCheck,
     [switch]$Publish,
     [string]$Repo = 'Aikiooo/mt-en-applier',
