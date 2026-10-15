@@ -36,6 +36,9 @@ def text_assets(bundle):
 
 
 def split_text_asset(raw):
+    # UnityPy's get_raw_data() returns a memoryview in some versions (the pinned
+    # 1.25.4 returns bytes); both slices and decodes need a bytes-like.
+    raw = bytes(raw)
     nlen = int.from_bytes(raw[:4], "little")
     name = raw[4:4 + nlen].decode("utf-8")
     p = 4 + nlen
