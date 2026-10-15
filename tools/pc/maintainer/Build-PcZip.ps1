@@ -47,7 +47,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$pcDir   = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)  # tools\pc
+$pcDir   = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path   # tools\pc
 $staging = Join-Path $OutDir 'staging'
 $zipPath = Join-Path $OutDir $ZipName
 

@@ -51,12 +51,16 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repo = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $here))
+$here = $PSScriptRoot      # absolute even when invoked as -File tools\pc\...
+$repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
+# The module exports variables named Repo and Release, which would overwrite this
+# script's own -Repo/-Release parameters on import, so they are read first.
+$ghRepo = $Repo
+$ghRelease = $Release
 Import-Module (Join-Path $here '..\MT.EnPatch.psm1') -Force
 
-if (-not $InappBuild) { $InappBuild = Join-Path $repo 'build\inapp_assets_all_en.bundle' }
-if (-not $PrefabDir)  { $PrefabDir  = Join-Path $repo 'build\prefab-patch' }
+if (-not $InappBuild) { $InappBuild = Join-Path $repoRoot 'build\inapp_assets_all_en.bundle' }
+if (-not $PrefabDir)  { $PrefabDir  = Join-Path $repoRoot 'build\prefab-patch' }
 $inappMeta = "$InappBuild.json"
 
 $langSrc  = Join-Path $SourceDir $LangBundleName
@@ -104,7 +108,10 @@ $pcBlock = [ordered]@{
 $prefabZip = Join-Path $OutDir $PrefabZipName
 $manifestPath = Join-Path $PrefabDir 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) {
-    $manifest = @(Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+    # No @() around the pipeline: Windows PowerShell 5.1 does not enumerate a
+    # JSON array out of ConvertFrom-Json, so @() would wrap it into a 1-element
+    # array whose single item is the list.
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $manifest.Count) { Write-Host 'ERROR: prefab manifest is empty.'; exit 1 }
 
     if (-not $SkipCacheCheck) {
@@ -148,6 +155,17 @@ if (Test-Path -LiteralPath $manifestPath) {
 $versionPath = Join-Path $OutDir $VersionFile
 Invoke-WebRequest -UseBasicParsing -Uri "$($ReleaseBase)/$($VersionFile)" -OutFile $versionPath
 $version = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
+# The pc_client copies are edited by hand between game builds, so taste a stale
+# one here rather than shipping it: an older language bundle silently undoes
+# tables the released one has fixed.
+$prevLang = Get-Prop (Get-Prop $version 'pc').language_ja_en 'md5'
+if ($prevLang -and $prevLang -ne $pcBlock.language_ja_en.md5) {
+    Write-Host ''
+    Write-Host "WARNING: the language bundle being published ($($pcBlock.language_ja_en.md5.Substring(0,8))...) differs"
+    Write-Host "         from the released one ($($prevLang.Substring(0,8))...). Confirm the source is the"
+    Write-Host '         newer build before publishing - a stale one regresses fixed tables.'
+    Write-Host ''
+}
 $version | Add-Member -NotePropertyName pc -NotePropertyValue $pcBlock -Force
 # Write BOM-free UTF-8: Set-Content -Encoding utf8 adds a BOM on Windows
 # PowerShell 5.1, which breaks the Android app's minimal JSON parser.
@@ -165,11 +183,11 @@ if ($Publish) {
     # what to download, so it must never point at a file that is not uploaded yet.
     $assets = @($langDst, $inappDst)
     if ($pcBlock.Contains('prefab_patch')) { $assets += $prefabZip }
-    Write-Host "uploading assets to $Repo@$Release ..."
-    gh release upload $Release @assets --repo $Repo --clobber
+    Write-Host "uploading assets to $ghRepo@$ghRelease ..."
+    gh release upload $ghRelease @assets --repo $ghRepo --clobber
     if ($LASTEXITCODE -ne 0) { Write-Host 'ERROR: asset upload failed; version.json was NOT uploaded.'; exit 1 }
     Write-Host "uploading $VersionFile ..."
-    gh release upload $Release $versionPath --repo $Repo --clobber
+    gh release upload $ghRelease $versionPath --repo $ghRepo --clobber
     if ($LASTEXITCODE -ne 0) { Write-Host 'ERROR: version.json upload failed.'; exit 1 }
     Write-Host 'done.'
 } else {
