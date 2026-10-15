@@ -61,7 +61,7 @@ def crc_checked_bundles(catalog_json):
         return set()
     try:
         text = base64.b64decode(raw).decode("utf-16-le", "ignore")
-    except ValueError:
+    except (ValueError, TypeError):
         return set()
     out = set()
     for m in re.finditer(r'\{"m_Hash".*?"m_ClearOtherCachedVersionsWhenLoaded":(?:true|false)\}', text):
@@ -128,6 +128,11 @@ def main():
     ids = catalog["m_InternalIds"]
     current = {m.group(1) for x in ids for m in [re.search(r"_([0-9a-f]{32})\.bundle$", x)] if m}
     checked = crc_checked_bundles(catalog)
+    if not checked:
+        raise SystemExit(
+            f"no m_UseCrcForCachedBundles entries found in {catalog_path}: the catalog layout "
+            "changed, or the wrong file was picked. Refusing to patch bundles that may be "
+            "CRC-checked (pass --catalog with the catalog the game is using).")
     bundles, kept_stock = [], []
     for p in glob.glob(os.path.join(cache, "*", "*", "__data")):
         name, content = bundle_hashes(p)

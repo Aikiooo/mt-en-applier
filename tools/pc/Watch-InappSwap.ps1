@@ -16,9 +16,10 @@
   be used the watcher falls back to inapp_assets_all.bundle.en next to the stock
   file, which is what the first release of this tool did.
 
-  On start it repairs a swap left over from a crash. It does not swap when the
-  installed bundle is not the stock file the English build was made from (game
-  update: rebuild with tools\prefab-patch\build_inapp.py).
+  On start it repairs a swap left over from a crash, and it refuses to swap when
+  the installed bundle is not the stock file the English build was made from, or
+  when that file changed while it was waiting (a game update in between). Only
+  one watcher runs at a time per game folder.
 
   English build: %LOCALAPPDATA%\MT-EN-Applier\pc\inapp_assets_all_en.bundle and
   its .json (stock_md5, md5, stock_size, crc), written by Install-EnPatch.ps1
@@ -48,7 +49,9 @@ New-Item -ItemType Directory -Force -Path $PatchDataDir | Out-Null
 
 function Log([string]$m) {
     $line = '{0:HH:mm:ss.fff} {1}' -f (Get-Date), $m
-    Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8
+    # Never let a log failure take the watcher down: it matters most exactly
+    # when something else has gone wrong.
+    try { Add-Content -LiteralPath $logPath -Value $line -Encoding UTF8 -ErrorAction Stop } catch { }
     Write-Host $line
 }
 
@@ -56,6 +59,17 @@ $gameDir = Get-GameDir -Override $GameDir
 if (-not $gameDir) { Write-Host 'Game folder not found; pass -GameDir.'; exit 1 }
 $live = Join-Path $gameDir $InappRelPath
 if (-not (Test-Path -LiteralPath $live)) { Write-Host "Not found: $live"; exit 1 }
+
+# One watcher per game folder: two of them fight over the same files, and the
+# loser can put the stock bundle back while the game is starting.
+$key = [BitConverter]::ToString(
+    [Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($live))).Replace('-', '')
+$mutex = New-Object System.Threading.Mutex($false, "Local\mt-en-inapp-$key")
+try { $mine = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $mine = $true }
+if (-not $mine) {
+    Write-Host 'Another MT-EN in-app watcher is already running for this game; nothing to do.'
+    exit 0
+}
 
 # Same volume as the game, outside the game's own tree. File.Replace needs
 # source, destination and backup on one volume to stay a rename.
@@ -83,26 +97,28 @@ function Restore-Stock {
         try { $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json } catch { }
     }
     foreach ($pair in @(@($stock, $staged), @($legacyStock, $legacy))) {
-        $from, $to = $pair
+        $from = $pair[0]
         if (-not (Test-Path -LiteralPath $from)) { continue }
         try {
-            if ((Test-Path -LiteralPath $live) -and $meta -and ((Get-Md5 $live) -eq $meta.md5)) {
-                [IO.File]::Replace($from, $live, $null, $true)   # English in place: put stock back
-            } elseif (-not (Test-Path -LiteralPath $live)) {
-                [IO.File]::Move($from, $live)
+            # Re-checked per pair: the first restore changes what is live.
+            $englishIsLive = $meta -and (Test-Path -LiteralPath $live) -and ((Get-Md5 $live) -eq $meta.md5)
+            if ($englishIsLive) {
+                # The English copy is parked at $legacy and deleted below: a
+                # $null backup path reaches .NET as an empty string and throws.
+                [IO.File]::Replace($from, $live, $legacy, $true)
+                Log 'Restored the stock in-app bundle left over from a previous run.'
             } else {
                 Remove-Item -LiteralPath $from -Force            # both stock; drop the leftover
             }
-            Log 'Restored the stock in-app bundle left over from a previous run.'
         } catch {
             Log ('Could not repair from ' + $from + ': ' + $_.Exception.Message)
         }
     }
-    if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Force }
+    # $staged is kept: it is the verified English copy for the next session.
     if (Test-Path -LiteralPath $legacy) { Remove-Item -LiteralPath $legacy -Force }
 }
 
-Set-Content -LiteralPath $logPath -Value ('In-app swap watcher - ' + (Get-Date -Format o)) -Encoding UTF8
+Log ('watcher start - live ' + $live + ' ; staging ' + $stageDir)
 try {
     if (Get-Process -Name $GameProcessName -ErrorAction SilentlyContinue) { Log 'Game already running; nothing to do.'; exit 0 }
     Restore-Stock
@@ -113,6 +129,9 @@ try {
         Log 'The installed in-app bundle is not the one the English build targets (game update?). Not swapping.'
         exit 2
     }
+    $liveStamp = (Get-Item -LiteralPath $live).LastWriteTimeUtc
+    $liveSize  = (Get-Item -LiteralPath $live).Length
+
     if ((Test-Path -LiteralPath $staged) -and ((Get-Md5 $staged) -eq $meta.md5)) {
         Log 'English in-app bundle already staged.'
     } else {
@@ -130,6 +149,14 @@ try {
     }
     if (-not $proc) { Log "Game did not start within $TimeoutSec s; nothing swapped."; exit 3 }
 
+    # A game update while we waited replaces the stock file, and the English
+    # build's CRC was forged for the one it was made from.
+    $now = Get-Item -LiteralPath $live
+    if ($now.Length -ne $liveSize -or $now.LastWriteTimeUtc -ne $liveStamp) {
+        Log 'The stock in-app bundle changed while waiting (game update?); not swapping.'
+        exit 2
+    }
+
     # One atomic-ish step: the English file takes the live path, the stock file
     # lands in the backup path, so there is no moment without a bundle there.
     [IO.File]::Replace($staged, $live, $stock, $true)
@@ -146,6 +173,15 @@ try {
 }
 catch {
     Log ('ERROR: ' + $_.Exception.Message)
-    try { Restore-Stock } catch { Log ('Restore failed: ' + $_.Exception.Message) }
+    if (Get-Process -Name $GameProcessName -ErrorAction SilentlyContinue) {
+        # Leave the files alone while the game runs; the next run repairs them.
+        Log 'The game is still running; leaving the bundles as they are (the next run repairs them).'
+    } else {
+        try { Restore-Stock } catch { Log ('Restore failed: ' + $_.Exception.Message) }
+    }
     exit 1
+}
+finally {
+    try { $mutex.ReleaseMutex() } catch { }
+    $mutex.Dispose()
 }

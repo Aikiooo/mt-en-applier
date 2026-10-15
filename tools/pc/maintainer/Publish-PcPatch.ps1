@@ -73,7 +73,7 @@ foreach ($f in @($langSrc, $InappBuild, $inappMeta)) {
         exit 1
     }
 }
-if (-not $LangBundleHash -match '^[0-9a-f]{32}$') {
+if ($LangBundleHash -notmatch '^[0-9a-f]{32}$') {
     Write-Host "ERROR: -LangBundleHash must be the 32-hex asset hash, got '$LangBundleHash'"; exit 1
 }
 
@@ -110,9 +110,11 @@ $manifestPath = Join-Path $PrefabDir 'manifest.json'
 if (Test-Path -LiteralPath $manifestPath) {
     # No @() around the pipeline: Windows PowerShell 5.1 does not enumerate a
     # JSON array out of ConvertFrom-Json, so @() would wrap it into a 1-element
-    # array whose single item is the list.
+    # array whose single item is the list. A one-entry manifest parses as a lone
+    # object, hence the @() on the variable.
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not $manifest.Count) { Write-Host 'ERROR: prefab manifest is empty.'; exit 1 }
+    $manifest = @($manifest)
+    if ($manifest.Count -eq 0) { Write-Host 'ERROR: prefab manifest is empty.'; exit 1 }
 
     if (-not $SkipCacheCheck) {
         $cache = Get-UnityCachePublisherDir
@@ -129,6 +131,18 @@ if (Test-Path -LiteralPath $manifestPath) {
             Write-Host 'Install-PrefabPatch.ps1 -Restore, then rebuild with build_prefab_patch.py.'
             $stale | Select-Object -First 5 | ForEach-Object { Write-Host "  $_" }
             exit 1
+        }
+        # The game build this patch belongs to is the language folder the game is
+        # using here, not the parameter's default: a mismatch means this machine
+        # is on another build than the one being published.
+        $langDir = Get-LangCacheDir
+        if ($langDir) {
+            $cacheHash = Split-Path $langDir -Leaf
+            if ($cacheHash -ne $LangBundleHash) {
+                Write-Host "ERROR: the language pack in the local cache is '$cacheHash', but -LangBundleHash is '$LangBundleHash'."
+                Write-Host 'Publish the build this machine actually runs, or pass -SkipCacheCheck to force.'
+                exit 1
+            }
         }
         Write-Host "verified $($manifest.Count) source bundles against the local cache"
     }
@@ -154,7 +168,7 @@ if (Test-Path -LiteralPath $manifestPath) {
 # Merge into the live version.json, preserving the Android keys.
 $versionPath = Join-Path $OutDir $VersionFile
 Invoke-WebRequest -UseBasicParsing -Uri "$($ReleaseBase)/$($VersionFile)" -OutFile $versionPath
-$version = Get-Content -LiteralPath $versionPath -Raw | ConvertFrom-Json
+$version = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json
 # The pc_client copies are edited by hand between game builds, so taste a stale
 # one here rather than shipping it: an older language bundle silently undoes
 # tables the released one has fixed.

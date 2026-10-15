@@ -70,17 +70,25 @@ anything about PowerShell or command lines. Just follow the 3 steps.
   step removes that. It rewrites text the game ships itself, so
   it is separate, and it downloads about 105 MB:
 
-  1. Open a terminal in this folder (Shift+right-click the folder ->
-     "Open PowerShell window here") and run:
-        Install-EnPatch.bat -WithAssets
+  1. Open a terminal in this folder (in Explorer: right-click the
+     folder -> "Open in Terminal", or Shift+right-click ->
+     "Open PowerShell window here"), then run:
+
+        .\Install-EnPatch.bat -WithAssets
+
+     (The ".\" matters in PowerShell: without it Windows looks for
+     the command in your PATH and does not find it.)
      (or, from any PowerShell, the one-liner with -WithAssets:
         & ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets )
-  2. Wait for "Install complete".
-  3. From now on, start the game by double-clicking
+  2. Wait for "Install complete". It already started the watcher
+     for this session, so you can click PLAY in DMM right away.
+  3. For later sessions, start the game by double-clicking
      Play-in-English.cmd (in %LOCALAPPDATA%\MT-EN-Applier\pc):
-     it stages the English in-app file, then click PLAY in DMM.
-     It puts the Japanese file back when you close the game, which
-     is why clicking PLAY directly only works after that.
+     that is what swaps the English in-app file in, then click
+     PLAY in DMM. It puts the Japanese file back when you close
+     the game — DMM always wants to see its own file first.
+     (Clicking PLAY directly works too; only the very first
+     screen stays partly Japanese.)
 
   Both halves are optional and independent: -Prefabs alone, or
   -FirstLoad alone, do half of this if you want less to download.
