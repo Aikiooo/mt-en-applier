@@ -51,9 +51,15 @@ def _from_cache(cache, jp):
     en = cache.get(s)
     if en is None:
         for v in (s.replace("\r\n", "\n"), s.replace("\r\n", "<br>"), s.replace("\n", "<br>")):
-            if v in cache:
-                en = cache[v] if "<br>" in s else cache[v].replace("<br>", "\n")
-                break
+            if v not in cache:
+                continue
+            en = cache[v]
+            # The cache writes line breaks as <br>; prefab text uses real ones.
+            # Only convert when the Japanese string has no real <br> of its own,
+            # i.e. when the match came from the <br> spelling of the key.
+            if "<br>" in v and "<br>" not in s:
+                en = en.replace("<br>", "\n")
+            break
     if en is None:
         return None
     # keep the original leading/trailing whitespace: layouts rely on it
