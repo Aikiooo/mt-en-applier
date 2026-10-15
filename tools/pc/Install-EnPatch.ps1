@@ -242,7 +242,13 @@ if ($Check) {
         Write-Host 'in-app       : no in-app build published for this game build yet'
     } else {
         $staged = Join-Path $PatchDataDir $InappFileName
-        $state = if (Test-Path -LiteralPath $staged) { 'downloaded, run the watcher before playing' } else { 'not downloaded' }
+        if (-not (Test-Path -LiteralPath $staged)) {
+            $state = 'not downloaded'
+        } elseif ((Get-Md5 $staged) -eq $inappPub.md5) {
+            $state = 'downloaded, run the watcher before playing'
+        } else {
+            $state = "an older build (re-run with -FirstLoad)"
+        }
         Write-Host "in-app       : $([math]::Round([int64]$inappPub.size / 1MB, 1)) MB - $state"
         $stockMd5 = Get-Prop $inappPub 'stock_md5'
         $stockNow = Get-Md5 $liveInapp
