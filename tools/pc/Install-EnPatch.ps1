@@ -59,7 +59,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$here = $PSScriptRoot      # absolute even when invoked as -File tools\pc\...
 Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 
 if ($WithAssets) { $Prefabs = $true; $FirstLoad = $true }
