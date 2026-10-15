@@ -124,7 +124,8 @@ def main():
     a = ap.parse_args()
 
     cache = a.cache or paths.cache_dir()
-    catalog = json.load(open(a.catalog or paths.newest_catalog(), encoding="utf-8"))
+    catalog_path = a.catalog or paths.newest_catalog()
+    catalog = json.load(open(catalog_path, encoding="utf-8"))
     ids = catalog["m_InternalIds"]
     current = {m.group(1) for x in ids for m in [re.search(r"_([0-9a-f]{32})\.bundle$", x)] if m}
     checked = crc_checked_bundles(catalog)

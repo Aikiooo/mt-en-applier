@@ -65,9 +65,9 @@ Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 if ($WithAssets) { $Prefabs = $true; $FirstLoad = $true }
 
 $prefabDir = Join-Path $PatchDataDir 'prefab-patch'
-$prefabBackupDir = Join-Path $PatchDataDir 'prefab-backup'
 $inappCmd = Join-Path $PatchDataDir 'Play-in-English.cmd'
 $inappMeta = Join-Path $PatchDataDir $InappMetaName
+$settingsPath = Join-Path $PatchDataDir 'settings.json'
 
 # The helper scripts run from wherever they are, but Play-in-English.cmd runs
 # whatever sits next to it in PatchDataDir, so a copy has to be there too (the
@@ -84,6 +84,8 @@ function Get-AssetScript([string]$Name) {
     return $dst
 }
 
+# Keep the copies in PatchDataDir current: Play-in-English.cmd runs those, and
+# the one they were copied from is replaced by every update.
 function Install-AssetScripts {
     foreach ($name in @('Watch-InappSwap.ps1', 'MT.EnPatch.psm1')) {
         $src = Get-AssetScript $name
@@ -93,54 +95,51 @@ function Install-AssetScripts {
     return (Join-Path $PatchDataDir 'Watch-InappSwap.ps1')
 }
 
-# Restore is also the repair path: a crash can leave the English bundle in place
-# with the stock one beside it.
-function Test-WatcherLeftovers([string]$KnownGameDir) {
-    if (-not $KnownGameDir) { return $false }
-    $stage = Join-Path (Split-Path $KnownGameDir -Parent) 'mt-en-staging'
-    foreach ($p in @((Join-Path $stage 'inapp_assets_all.stock.bundle'),
-                     (Join-Path $KnownGameDir "$InappRelPath.en"),
-                     (Join-Path $KnownGameDir "$InappRelPath.stock"))) {
-        if (Test-Path -LiteralPath $p) { return $true }
-    }
-    return $false
-}
-
+# Repair whatever a crashed session left behind and return the watcher's output.
+# Asked unconditionally rather than second-guessed here: the watcher knows where
+# its own staging folder is, including the fallback inside StreamingAssets.
 function Invoke-WatcherRepair([string]$KnownGameDir) {
     $watcher = Get-AssetScript 'Watch-InappSwap.ps1'
     # Named parameters, not an array splat: splatted arrays bind positionally.
-    if ($KnownGameDir) { & $watcher -RestoreOnly -GameDir $KnownGameDir | Out-Null }
-    else { & $watcher -RestoreOnly | Out-Null }
+    if ($KnownGameDir) { return (& $watcher -RestoreOnly -GameDir $KnownGameDir) -join "`n" }
+    return (& $watcher -RestoreOnly) -join "`n"
 }
 
-function Invoke-PrefabRestore {
-    if (-not (Test-Path -LiteralPath $prefabDir)) { return $false }
-    try {
-        & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir -Restore
-        Write-Host 'Restored: the cached UI prefabs are Japanese again.'
-    } catch {
-        # No $LASTEXITCODE check: a script invoked with & does not set it.
-        Write-Host "NOTE: could not restore the UI prefabs: $($_.Exception.Message)"
-        Write-Host '      The backups are kept, so a later -Restore can finish the job.'
-    }
-    return $true
+# Returns the prefab script's result object ($null when there is nothing to do).
+function Invoke-PrefabRestore([switch]$ReportOnly) {
+    if (-not (Test-Path -LiteralPath $prefabDir)) { return $null }
+    return & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir -Restore -Check:$ReportOnly
 }
 
-# Nothing left armed: the in-app file is a download, but the command that swaps
-# it in and the metadata it verifies against are part of the patch.
+# Nothing left armed: the in-app file itself is only a download, but the command
+# that swaps it in and the metadata it verifies against are part of the patch.
 function Remove-InappStaging([string]$KnownGameDir) {
+    $meta = $null
+    if (Test-Path -LiteralPath $inappMeta) {
+        try { $meta = Get-Content -LiteralPath $inappMeta -Raw | ConvertFrom-Json } catch { }
+    }
     foreach ($p in @($inappCmd, $inappMeta)) {
         if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
     }
-    if ($KnownGameDir) {
-        $stage = Join-Path (Split-Path $KnownGameDir -Parent) 'mt-en-staging'
-        foreach ($p in @((Join-Path $stage 'inapp_assets_all_en.bundle'),
-                         (Join-Path $stage 'inapp_assets_all.stock.bundle'))) {
-            if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
+    if (-not $KnownGameDir) { return }
+    $stage = Join-Path (Split-Path $KnownGameDir -Parent) 'mt-en-staging'
+    foreach ($p in @((Join-Path $stage 'inapp_assets_all_en.bundle'),
+                     (Join-Path $stage 'inapp_assets_all.stock.bundle'))) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        # The stock copy can be the only one left after a crashed swap: drop it
+        # only once the installed bundle is provably the stock one.
+        if ($p -like '*stock*') {
+            $livePath = Join-Path $KnownGameDir $InappRelPath
+            $isStock = $meta -and (Test-Path -LiteralPath $livePath) -and ((Get-Md5 $livePath) -eq $meta.stock_md5)
+            if (-not $isStock) {
+                Write-Host "NOTE: keeping $p (the installed in-app bundle is not the stock file)."
+                continue
+            }
         }
-        if ((Test-Path -LiteralPath $stage) -and -not (Get-ChildItem -LiteralPath $stage -Force)) {
-            Remove-Item -LiteralPath $stage -Force
-        }
+        Remove-Item -LiteralPath $p -Force
+    }
+    if ((Test-Path -LiteralPath $stage) -and -not (Get-ChildItem -LiteralPath $stage -Force)) {
+        Remove-Item -LiteralPath $stage -Force
     }
 }
 
@@ -157,13 +156,26 @@ if (Get-Process -Name $GameProcessName -ErrorAction SilentlyContinue) {
 if ($Restore) {
     $knownGame = $null
     try { $knownGame = Get-GameDir -Override $GameDir } catch { }   # uninstalled: nothing to repair
-    if (Test-WatcherLeftovers $knownGame) {
-        try { Invoke-WatcherRepair $knownGame }
-        catch { Write-Host "NOTE: could not put the stock in-app bundle back: $($_.Exception.Message)" }
-    }
+    try {
+        $repair = Invoke-WatcherRepair $knownGame
+        if ($repair -match 'stock in-app bundle (left over|back)|Put the stock') {
+            Write-Host 'Repaired an in-app swap left behind by a previous session.'
+        }
+    } catch { Write-Host "NOTE: could not repair the in-app staging folder: $($_.Exception.Message)" }
     Remove-InappStaging $knownGame
 
-    if (Invoke-PrefabRestore) { }   # reports its own outcome
+    $prefab = Invoke-PrefabRestore
+    if ($prefab) {
+        if ($prefab.failed) {
+            Write-Host "NOTE: $($prefab.failed) UI prefabs could not be restored; see the counts above."
+        } elseif ($prefab.restored) {
+            Write-Host "Restored: $($prefab.restored) cached UI prefabs are Japanese again."
+        } elseif ($prefab.already -eq 0) {
+            Write-Host 'No cached UI prefabs needed restoring.'
+        } else {
+            Write-Host 'Restored: the cached UI prefabs were already Japanese.'
+        }
+    }
 
     $cacheDir = Get-LangCacheDir
     $data = if ($cacheDir) { Join-Path $cacheDir '__data' }
@@ -199,9 +211,14 @@ foreach ($f in @($liveInapp, $liveBoot)) {
 }
 
 # Repair a swap a crashed session left behind, before touching anything else.
-if (Test-WatcherLeftovers $gameDir) {
-    try { Invoke-WatcherRepair $gameDir; Write-Host 'repaired an in-app swap left behind by a previous session' }
-    catch { Write-Host "NOTE: could not repair the in-app staging folder: $($_.Exception.Message)" }
+# Never in -Check mode: reporting must not change files.
+if (-not $Check) {
+    try {
+        $repair = Invoke-WatcherRepair $gameDir
+        if ($repair -match 'stock in-app bundle (left over|back)|Put the stock') {
+            Write-Host 'repaired an in-app swap left behind by a previous session'
+        }
+    } catch { Write-Host "NOTE: could not check the in-app staging folder: $($_.Exception.Message)" }
 }
 
 # --- 2. release info + language ----------------------------------------------
@@ -215,16 +232,16 @@ if ($Check) {
     $version = Get-ReleaseInfo
 }
 $langs = @(Get-PcLanguages -Version $version)
-$settingsPath = Join-Path $PatchDataDir 'settings.json'
 
-function Read-SavedLanguage {
+function Read-SavedSettings {
     try {
         if (Test-Path -LiteralPath $settingsPath) {
-            return (Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json).language
+            return Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
         }
     } catch { }
     return $null
 }
+$saved = Read-SavedSettings
 
 if ($Language) {
     $chosen = $langs | Where-Object { $_.Code -eq $Language } | Select-Object -First 1
@@ -235,9 +252,9 @@ if ($Language) {
 } elseif ($langs.Count -eq 1) {
     $chosen = $langs[0]
 } else {
-    $saved = Read-SavedLanguage
+    $savedCode = Get-Prop $saved 'language'
     $osLang = (Get-UICulture).TwoLetterISOLanguageName
-    $default = $langs | Where-Object { $_.Code -eq $saved } | Select-Object -First 1
+    $default = $langs | Where-Object { $_.Code -eq $savedCode } | Select-Object -First 1
     $from = 'last time'
     if (-not $default) { $default = $langs | Where-Object { $_.Code -eq $osLang } | Select-Object -First 1; $from = 'Windows language' }
     if (-not $default) { $default = $langs[0]; $from = 'default' }
@@ -245,7 +262,7 @@ if ($Language) {
     $canAsk = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
     if ($Check) {
         Write-Host "languages    : $(($langs | ForEach-Object { $_.Name }) -join ', ') (would default to $($default.Name))"
-    } elseif ($saved -and $default.Code -eq $saved) {
+    } elseif ($savedCode -and $default.Code -eq $savedCode) {
         Write-Host "language : $($chosen.Name) (from last time; pass -Language <code> to change)"
     } elseif ($canAsk) {
         Write-Host ''
@@ -260,15 +277,27 @@ if ($Language) {
 }
 
 # The UI prefabs and the in-app bundle are English builds; a Spanish language
-# pack with an English title screen would be worse than either alone. Anything a
-# previous English run left in place is undone here, so the result is fully the
-# chosen language.
-if (($Prefabs -or $FirstLoad) -and $chosen.Code -ne 'en') {
-    Write-Host "The UI prefab and in-app builds are English-only; skipping them for $($chosen.Name)."
-    if (Test-Path -LiteralPath $prefabDir) { Invoke-PrefabRestore }
-    Remove-InappStaging $gameDir
+# pack with an English title screen would be worse than either alone. This runs
+# whether or not the flags were passed, because what matters is what is already
+# installed here.
+if ($chosen.Code -ne 'en') {
+    $englishParts = @()
+    if (Test-Path -LiteralPath $prefabDir) { $englishParts += 'the UI prefabs' }
+    if (Test-Path -LiteralPath $inappCmd) { $englishParts += 'the in-app title screen' }
+    if ($englishParts) {
+        Write-Host "English-only parts ($($englishParts -join ', ')) don't apply to $($chosen.Name); removing them."
+        if (-not $Check) {
+            $prefab = Invoke-PrefabRestore
+            if ($prefab -and $prefab.failed) { Write-Host "NOTE: $($prefab.failed) UI prefabs could not be restored." }
+            Remove-InappStaging $gameDir
+        }
+    } elseif ($Prefabs -or $FirstLoad) {
+        Write-Host "The UI prefab and in-app builds are English-only; skipping them for $($chosen.Name)."
+    }
     $Prefabs = $false
     $FirstLoad = $false
+} elseif (-not $Check -and (Test-Path -LiteralPath $inappCmd)) {
+    [void](Install-AssetScripts)   # the .cmd runs these; keep them current
 }
 
 # The asset patches are built per game build; both are published under pc.
@@ -305,8 +334,8 @@ if ($Check) {
             # restore leaves the backups behind.
             $done = 0
             $manifestPath = Join-Path $prefabDir 'manifest.json'
-            if (Test-Path -LiteralPath $manifestPath) {
-                $cache = Get-UnityCachePublisherDir
+            $cache = Get-UnityCachePublisherDir
+            if ($cache -and (Test-Path -LiteralPath $manifestPath)) {
                 foreach ($e in (Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)) {
                     $t = Join-Path $cache ($e.rel -replace '/', '\')
                     if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) { $done++ }
@@ -358,7 +387,14 @@ version isn't out yet. -Force installs anyway.)
     exit 1
 }
 
-try { @{ language = $chosen.Code } | ConvertTo-Json | Set-Content -LiteralPath $settingsPath -Encoding ASCII } catch { }
+# Remember the choice and the folder that was found: the watcher falls back to
+# this when DMM's config does not name the game, which keeps the game path out
+# of Play-in-English.cmd (it is written as ASCII).
+try {
+    [IO.File]::WriteAllText($settingsPath,
+        (@{ language = $chosen.Code; game_dir = $gameDir } | ConvertTo-Json),
+        (New-Object System.Text.UTF8Encoding($false)))
+} catch { }
 
 # --- 4. download + verify the patch -----------------------------------------
 $usePrefabs = $Prefabs -and [bool]$prefabPub
@@ -419,26 +455,30 @@ if (-not $res.SizeOk) {
 # --- 7. prefab bundles (persistent, same cache as the language bundle) -------
 if ($usePrefabs) {
     Write-Host 'unpacking the English UI prefabs ...'
-    # The old tree is replaced, so a failed restore cannot be resurrected from a
-    # stale manifest, and the backups are kept for a later -Restore.
-    if (Test-Path -LiteralPath $prefabDir) { Remove-Item -LiteralPath $prefabDir -Recurse -Force }
+    # Unpacked into a fresh folder and only then swapped in, so a failed extract
+    # cannot take the previous tree (and its manifest) with it.
     $zip = $art.Files.prefab
+    $newDir = "$prefabDir.new"
+    if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
     $extracted = $false
     try {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $prefabDir)
+        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $newDir)
         $extracted = $true
     } catch {
         Write-Host "  (ZipFile failed: $($_.Exception.Message); trying Expand-Archive)"
     }
     if (-not $extracted) {
-        New-Item -ItemType Directory -Force -Path $prefabDir | Out-Null
-        Expand-Archive -LiteralPath $zip -DestinationPath $prefabDir -Force
+        New-Item -ItemType Directory -Force -Path $newDir | Out-Null
+        Expand-Archive -LiteralPath $zip -DestinationPath $newDir -Force
     }
-    $manifest = Get-Content -LiteralPath (Join-Path $prefabDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath (Join-Path $newDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (Test-Path -LiteralPath $prefabDir) { Remove-Item -LiteralPath $prefabDir -Recurse -Force }
+    Move-Item -LiteralPath $newDir -Destination $prefabDir
     Write-Host "  prefabs : $(@($manifest).Count) bundles (published: $($prefabPub.bundles))"
     try {
-        & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir
+        $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir
+        if ($res -and $res.missing) { Write-Host 'Some UI bundles were not in the cache yet (see above).' }
     } catch {
         # The language bundle is already seeded; the in-app half below is
         # independent, so a prefab failure must not take it down too.
@@ -465,8 +505,8 @@ if ($useInapp) {
         ConvertTo-Json | Set-Content -LiteralPath $inappMeta -Encoding ASCII
 
     $watcher = Install-AssetScripts
-    # No -GameDir here: the watcher finds the game from DMM's config, and this
-    # file is written as ASCII, so a non-ASCII game path would be mangled.
+    # No -GameDir here: the watcher reads it from DMM's config or from
+    # settings.json, and this file is written as ASCII.
     @"
 @echo off
 rem MT-EN: stages the English in-app bundle, then click Play in DMM GAME PLAYER.

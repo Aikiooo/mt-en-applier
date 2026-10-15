@@ -13,7 +13,7 @@
   The staged file deliberately does NOT live in StreamingAssets: it goes to
   <parent of the game folder>\mt-en-staging (same volume, so the swap stays an
   instant rename while DMM's own file check never sees it). If that folder can't
-  be used the watcher falls back to inapp_assets_all.bundle.en next to the stock
+  be used the watcher falls back to inapp_assets_all_en.bundle next to the stock
   file, which is what the first release of this tool did.
 
   On start it repairs a swap left over from a crash, and it refuses to swap when
@@ -45,6 +45,7 @@ Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 if (-not $EnglishBundle) { $EnglishBundle = Join-Path $PatchDataDir $InappFileName }
 $metaPath = "$EnglishBundle.json"
 $logPath = Join-Path $PatchDataDir 'inapp-swap.log'
+$settingsPath = Join-Path $PatchDataDir 'settings.json'
 New-Item -ItemType Directory -Force -Path $PatchDataDir | Out-Null
 
 function Log([string]$m) {
@@ -56,14 +57,24 @@ function Log([string]$m) {
 }
 
 $gameDir = Get-GameDir -Override $GameDir
+if (-not $gameDir) {
+    # The installer records the folder it resolved, for players whose DMM config
+    # does not name the game or who had to pass -GameDir themselves.
+    try {
+        if (Test-Path -LiteralPath $settingsPath) {
+            $gameDir = (Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json).game_dir
+        }
+    } catch { }
+}
 if (-not $gameDir) { Write-Host 'Game folder not found; pass -GameDir.'; exit 1 }
 $live = Join-Path $gameDir $InappRelPath
 if (-not (Test-Path -LiteralPath $live)) { Write-Host "Not found: $live"; exit 1 }
 
 # One watcher per game folder: two of them fight over the same files, and the
-# loser can put the stock bundle back while the game is starting.
-$key = [BitConverter]::ToString(
-    [Security.Cryptography.MD5]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($live))).Replace('-', '')
+# loser can put the stock bundle back while the game is starting. The path is
+# normalised first so "-GameDir D:\x" and the path from DMM's config agree.
+$key = [BitConverter]::ToString([Security.Cryptography.MD5]::Create().ComputeHash(
+    [Text.Encoding]::UTF8.GetBytes([IO.Path]::GetFullPath($live).ToLowerInvariant()))).Replace('-', '')
 $mutex = New-Object System.Threading.Mutex($false, "Local\mt-en-inapp-$key")
 try { $mine = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $mine = $true }
 if (-not $mine) {
@@ -91,30 +102,40 @@ $stock     = Join-Path $stageDir 'inapp_assets_all.stock.bundle'
 $legacy    = "$live.en"      # the first release staged in place; migrate on sight
 $legacyStock = "$live.stock"
 
+# Put back whatever a previous run left behind. The stock copy is only ever
+# deleted once the installed bundle is provably the stock one: it can be the
+# only copy left.
 function Restore-Stock {
     $meta = $null
     if (Test-Path -LiteralPath $metaPath) {
         try { $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json } catch { }
     }
+    if (-not $meta) {
+        Log 'No metadata beside the English bundle; leaving staged files alone.'
+        return
+    }
     foreach ($pair in @(@($stock, $staged), @($legacyStock, $legacy))) {
         $from = $pair[0]
         if (-not (Test-Path -LiteralPath $from)) { continue }
         try {
-            # Re-checked per pair: the first restore changes what is live.
-            $englishIsLive = $meta -and (Test-Path -LiteralPath $live) -and ((Get-Md5 $live) -eq $meta.md5)
-            if ($englishIsLive) {
-                # The English copy is parked at $legacy and deleted below: a
-                # $null backup path reaches .NET as an empty string and throws.
-                [IO.File]::Replace($from, $live, $legacy, $true)
+            if (-not (Test-Path -LiteralPath $live)) {
+                # File.Replace can die between its two steps: the stock copy is
+                # the only one left, so it goes back.
+                [IO.File]::Move($from, $live)
+                Log 'Put the stock in-app bundle back (the game folder had none).'
+            } elseif ((Get-Md5 $live) -eq $meta.md5) {
+                # English is live: park it (reused next session) and restore stock.
+                [IO.File]::Replace($from, $live, $staged, $true)
                 Log 'Restored the stock in-app bundle left over from a previous run.'
+            } elseif ((Get-Md5 $live) -eq $meta.stock_md5) {
+                Remove-Item -LiteralPath $from -Force             # both stock; drop the copy
             } else {
-                Remove-Item -LiteralPath $from -Force            # both stock; drop the leftover
+                Log ('Leaving ' + $from + ' alone: the installed bundle is neither the stock nor the English build.')
             }
         } catch {
             Log ('Could not repair from ' + $from + ': ' + $_.Exception.Message)
         }
     }
-    # $staged is kept: it is the verified English copy for the next session.
     if (Test-Path -LiteralPath $legacy) { Remove-Item -LiteralPath $legacy -Force }
 }
 
@@ -180,8 +201,4 @@ catch {
         try { Restore-Stock } catch { Log ('Restore failed: ' + $_.Exception.Message) }
     }
     exit 1
-}
-finally {
-    try { $mutex.ReleaseMutex() } catch { }
-    $mutex.Dispose()
 }

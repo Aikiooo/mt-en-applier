@@ -214,15 +214,20 @@ function Get-VerifiedFile {
     if ($need) {
         # A complete file left by an older release can be shorter than this one,
         # and resuming onto it would append the new tail to the old bytes. Only
-        # the .part file of an interrupted attempt is ever resumed, and it is
-        # discarded first if it is not smaller than what is expected.
-        if ((Test-Path -LiteralPath $part) -and ((Get-Item $part).Length -ge [int64]$Want.size)) {
-            Remove-Item -LiteralPath $part -Force
+        # the .part file of an interrupted attempt for THIS expected md5 is ever
+        # resumed: the sidecar records which download it belongs to.
+        $partMd5 = "$part.md5"
+        $resume = (Test-Path -LiteralPath $part) -and (Test-Path -LiteralPath $partMd5) -and
+                  ((Get-Content -LiteralPath $partMd5 -Raw -ErrorAction SilentlyContinue).Trim() -eq $Want.md5) -and
+                  ((Get-Item $part).Length -lt [int64]$Want.size)
+        if (-not $resume) {
+            Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+            Set-Content -LiteralPath $partMd5 -Value $Want.md5 -Encoding ASCII
         }
-        if (Test-Path -LiteralPath $part) { Write-Host "  resuming $Name ..." }
-        else { Write-Host "  downloading $Name ($([math]::Round([int64]$Want.size / 1MB, 1)) MB) ..." }
+        Write-Host "  $(if ($resume) { 'resuming' } else { 'downloading' }) $Name ($([math]::Round([int64]$Want.size / 1MB, 1)) MB) ..."
         Get-RemoteFile -Uri "$($script:ReleaseBase)/$Name" -Destination $part
         Move-Item -LiteralPath $part -Destination $dst -Force
+        Remove-Item -LiteralPath $partMd5 -Force -ErrorAction SilentlyContinue
     }
     $actualSize = (Get-Item $dst).Length
     $actualMd5  = Get-Md5 $dst
@@ -230,7 +235,8 @@ function Get-VerifiedFile {
         # Drop it rather than leaving a file whose size matches but whose bytes
         # do not: the next run then downloads it again instead of failing.
         Remove-Item -LiteralPath $dst -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$dst.part" -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$dst.part.md5" -Force -ErrorAction SilentlyContinue
         throw "Integrity check failed for ${Name}: size $actualSize/$($Want.size), md5 $actualMd5/$($Want.md5). Re-run the installer; it will download it again."
     }
     return $dst
