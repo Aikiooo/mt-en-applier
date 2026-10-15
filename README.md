@@ -25,7 +25,8 @@ Every platform installs the same translation, from the rolling
 > **Load twice for full translation.** Some screens fetch their text on first load
 > and cache it, so a few lines can stay Japanese the very first time. Go back to the
 > title menu and re-enter; the second load is fully English. This applies to every
-> platform.
+> platform. On **PC** it can be removed entirely with the optional `-WithAssets` step
+> in the Windows section below.
 
 ### Android phone
 
@@ -62,6 +63,14 @@ irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/inst
 
 Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game update.
 
+- **Fully English on the first load (optional, ~300 MB).** Add `-WithAssets`: it
+  rewrites the text the game itself ships (the cached UI prefabs and the in-app
+  bundle behind the first-load title screen), so nothing stays Japanese until a
+  second load. It installs a small watcher for the in-app half and writes
+  `Play-in-English.cmd` — start the game with that, then click Play, so the English
+  file is in place while DMM's own file check still sees the stock one.
+  **[`tools/pc/README.md`](tools/pc/README.md)** has the one-liner form and the
+  details; `-Prefabs` / `-FirstLoad` do the two halves on their own.
 - **No terminal?** Download the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases/tag/pc-v1),
   extract it and double-click `Install-EnPatch.bat`. `START-HERE.txt` inside is the
   whole guide.
@@ -132,7 +141,9 @@ or users can't update over their installed copy.
 - **Patch:** the English patch (`__data`, `version.json`, `translation_cache.json`, PC
   bundles) is published to `patch-latest` by the maintainer pipeline;
   [`tools/pc/maintainer/Publish-PcPatch.ps1`](tools/pc/maintainer/Publish-PcPatch.ps1)
-  adds the PC block.
+  adds the PC block — the language bundle, the in-app bundle with the stock metadata
+  the swap watcher needs, and `prefab-patch.zip` (it verifies that build against the
+  local game cache before uploading).
 - **PC installer:** [`tools/pc/maintainer/Build-PcZip.ps1`](tools/pc/maintainer/Build-PcZip.ps1) `-Publish`
   uploads the zip and the one-line installer together, so both always run the same scripts.
 - **Other languages:** [`tools/translations/Publish-Locale.ps1`](tools/translations/Publish-Locale.ps1)
@@ -145,6 +156,10 @@ or users can't update over their installed copy.
 - Keep the `locales` block of `version.json` when the English release is republished.
 - Server-side auto-build on game updates (GitHub Actions / watcher), so `patch-latest`
   refreshes without a manual run.
+- Japanese **textures** (~170: title logo, gacha/event logos, quest cards) — still a
+  separate follow-up; text is covered on PC.
+- Android first-load fix: the in-app bundle there lives inside the APK, so the PC
+  approach (swap the StreamingAssets copy at launch) doesn't transfer.
 
 ## Legal / disclaimer
 

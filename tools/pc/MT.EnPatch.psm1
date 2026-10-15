@@ -10,7 +10,9 @@ $script:ReleaseBase   = "https://github.com/$($script:Repo)/releases/download/$(
 if ($env:MT_EN_RELEASE_BASE) { $script:ReleaseBase = $env:MT_EN_RELEASE_BASE.TrimEnd('/') }   # testing only
 
 $script:LangFileName  = 'language-ja_en.bundle'      # exact-size, CRC-forged language bundle
-$script:InappFileName = 'inapp_assets_all_en.bundle'  # EN inapp asset patch
+$script:InappFileName = 'inapp_assets_all_en.bundle'  # EN inapp asset patch (StreamingAssets, swapped per session)
+$script:InappMetaName = 'inapp_assets_all_en.bundle.json'  # stock_md5/md5 the swap watcher verifies
+$script:PrefabZipName = 'prefab-patch.zip'             # the English UI-prefab bundles, one zip per game build
 $script:VersionFile   = 'version.json'
 
 $script:GameProcessName = 'mushoku_coe_cl'
@@ -171,14 +173,38 @@ function Get-PcLanguages {
     return $out
 }
 
+# Download one file from the release, resuming a partial download when there is
+# one. curl.exe ships with Windows 10 1803+ and is the only resumable option in
+# Windows PowerShell 5.1 - the prefab zip is a few hundred MB, so a dropped
+# connection must not restart it. Invoke-WebRequest is the fallback (no resume,
+# and 5.1 throttles it badly unless progress is silenced).
+function Get-RemoteFile {
+    param([Parameter(Mandatory)][string]$Uri, [Parameter(Mandatory)][string]$Destination)
+    $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+    if (Test-Path -LiteralPath $curl) {
+        & $curl -L --fail --retry 3 --retry-delay 2 -C - -sS -o $Destination $Uri
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Host "  curl failed (exit $LASTEXITCODE); falling back to Invoke-WebRequest ..."
+    }
+    $prev = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try { Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $Destination }
+    finally { $ProgressPreference = $prev }
+}
+
 # Download (if missing or changed) + verify one file from the release.
 function Get-VerifiedFile {
     param([string]$Name, $Want, [switch]$Force)
     $dst = Join-Path $script:PatchDataDir $Name
     $need = $Force -or -not (Test-Path $dst) -or ((Get-Item $dst).Length -ne [int64]$Want.size) -or ((Get-Md5 $dst) -ne $Want.md5)
     if ($need) {
-        Write-Host "  downloading $Name ..."
-        Invoke-WebRequest -UseBasicParsing -Uri "$($script:ReleaseBase)/$Name" -OutFile $dst
+        # Resume only a file that is short of the expected size; a complete but
+        # wrong file would otherwise be resumed from its end and stay wrong.
+        if ((Test-Path -LiteralPath $dst) -and ((Get-Item $dst).Length -ge [int64]$Want.size)) {
+            Remove-Item -LiteralPath $dst -Force
+        }
+        Write-Host "  downloading $Name ($([math]::Round([int64]$Want.size / 1MB, 1)) MB) ..."
+        Get-RemoteFile -Uri "$($script:ReleaseBase)/$Name" -Destination $dst
     }
     $actualSize = (Get-Item $dst).Length
     $actualMd5  = Get-Md5 $dst
@@ -188,17 +214,22 @@ function Get-VerifiedFile {
     return $dst
 }
 
-# Download + verify the chosen language bundle. The 63 MB inapp patch is only
-# fetched with -IncludeInapp: the installer never installs it (it only needs
-# its md5 from version.json to tell a stock inapp file from a patched one).
+# Download + verify the chosen language bundle, and optionally the asset patches
+# (the 63 MB in-app bundle, and the prefab zip the installer unpacks itself).
+# Everything is opted into by the caller so a plain language install fetches 1.9 MB.
 function Get-PatchArtifacts {
     param([Parameter(Mandatory)]$Version, [Parameter(Mandatory)]$Language,
-          [switch]$IncludeInapp, [switch]$Force)
+          [switch]$IncludeInapp, [switch]$IncludePrefabs, [switch]$Force)
     $files = @{ lang = Get-VerifiedFile -Name $Language.File -Want $Language.Want -Force:$Force }
     if ($IncludeInapp) {
         $files.inapp = Get-VerifiedFile -Name $script:InappFileName -Want $Version.pc.inapp_assets_all_en -Force:$Force
     }
-    return @{ Version = $Version; Files = $files; Want = @{ lang = $Language.Want; inapp = $Version.pc.inapp_assets_all_en } }
+    if ($IncludePrefabs) {
+        $pp = Get-Prop (Get-Prop $Version 'pc') 'prefab_patch'
+        if ($pp) { $files.prefab = Get-VerifiedFile -Name (Get-Prop $pp 'file') -Want $pp -Force:$Force }
+    }
+    return @{ Version = $Version; Files = $files; Want = @{ lang = $Language.Want; inapp = $Version.pc.inapp_assets_all_en
+                                                            prefab = (Get-Prop (Get-Prop $Version 'pc') 'prefab_patch') } }
 }
 
 # Seed the exact-size language bundle into the Unity cache __data (catalog untouched).
@@ -214,8 +245,11 @@ function Install-LanguageCache {
         $pub = Get-UnityCachePublisherDir
         if (-not $pub) { throw 'Unity cache publisher folder not found. Launch the game once to the title screen, then retry.' }
         $cacheDir = Join-Path $pub (Join-Path $script:LangBundleGuid (Get-LangBundleHash))
-        New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
     }
+    # Get-LangCacheDir returns the folder the game *would* use when the cache has
+    # no language pack yet (fresh install, or after DMM repaired the game), so it
+    # is created here rather than only in the branch above.
+    New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
     $dataDst = Join-Path $cacheDir '__data'
     $infoDst = Join-Path $cacheDir '__info'
@@ -230,7 +264,7 @@ function Install-LanguageCache {
     }
 }
 
-Export-ModuleMember -Function Get-Md5, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Get-PatchArtifacts, Install-LanguageCache `
-                    -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, VersionFile, `
+Export-ModuleMember -Function Get-Md5, Get-RemoteFile, Get-Prop, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Get-PatchArtifacts, Get-VerifiedFile, Install-LanguageCache `
+                    -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, InappMetaName, PrefabZipName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir

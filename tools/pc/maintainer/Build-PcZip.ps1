@@ -11,6 +11,8 @@
     Install-EnPatch.bat / .ps1   - double-click installer
     Restore-Japanese.bat         - double-click undo (back to Japanese)
     MT.EnPatch.psm1              - shared helpers the installer imports
+    Install-PrefabPatch.ps1      - installs the English UI prefabs (-Prefabs)
+    Watch-InappSwap.ps1          - per-session in-app swap (-FirstLoad)
     START-HERE.txt               - the 3-step plain-language guide
     README.md                    - the full guide
 
@@ -54,6 +56,8 @@ $userFiles = @(
     'Restore-Japanese.bat',
     'Install-EnPatch.ps1',
     'MT.EnPatch.psm1',
+    'Install-PrefabPatch.ps1',
+    'Watch-InappSwap.ps1',
     'START-HERE.txt',
     'README.md'
 )
@@ -107,7 +111,8 @@ release, so this zip stays current.
     }
 
     # web installer: same scripts as the zip, next to the patch it downloads
-    $web = @('install.ps1', 'Install-EnPatch.ps1', 'MT.EnPatch.psm1') | ForEach-Object { Join-Path $pcDir $_ }
+    $web = @('install.ps1', 'Install-EnPatch.ps1', 'MT.EnPatch.psm1', 'Install-PrefabPatch.ps1', 'Watch-InappSwap.ps1') |
+           ForEach-Object { Join-Path $pcDir $_ }
     Write-Host "uploading the web installer to '$WebRelease' ..."
     gh release upload $WebRelease @web --repo $Repo --clobber
     if ($LASTEXITCODE -ne 0) { Write-Host 'ERROR: web installer upload failed'; exit 1 }
