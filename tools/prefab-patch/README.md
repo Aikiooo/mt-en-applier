@@ -47,26 +47,43 @@ py -I -X utf8 tools\prefab-patch\build_prefab_patch.py --translation-cache trans
 py -I -X utf8 tools\prefab-patch\build_inapp.py --language-bundle language-ja_en.bundle --translation-cache translation_cache.json
 ```
 
-- Outputs go to `build\prefab-patch\` (plus `manifest.json`) and `build\inapp_assets_all_en.bundle` (plus `.json`).
+- Outputs go to `build\prefab-patch\` (plus `manifest.json`, `untranslated.json` and `crc-checked.json`) and `build\inapp_assets_all_en.bundle` (plus `.json`).
 - `build_inapp.py` finds the AES key in `global-metadata.dat` on its own. The PC offsets
   for 1.2.0 are `0xba5ab8` (key) and `0xba8538` (IV), not Android's `0xbc3df0`/`0xbc6870`.
 - Builds are deterministic: the same inputs give byte-identical files.
+- `crc-checked.json` lists the cached bundles the current catalog verifies with
+  `m_UseCrcForCachedBundles`, which are therefore left stock (none of them carries UI
+  text today). If that file grows, the game moved UI text into a verified bundle.
 
 ## Install (player)
 
+Wired into the normal installer. Either flag works on its own; `-WithAssets` is both:
+
 ```powershell
-# prefab bundles into the cache (backs up the originals; -Restore puts them back)
-powershell -ExecutionPolicy Bypass -File tools\pc\Install-PrefabPatch.ps1 -PatchDir build\prefab-patch
-# copy build\inapp_assets_all_en.bundle(.json) to %LOCALAPPDATA%\MT-EN-Applier\pc\, then before each session:
-powershell -ExecutionPolicy Bypass -File tools\pc\Watch-InappSwap.ps1   # then click Play in DMM
+Install-EnPatch.ps1 -WithAssets     # or -Prefabs / -FirstLoad
+# one-line, no download of the zip:
+& ([scriptblock]::Create((irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/install.ps1))) -WithAssets
+# back to Japanese (undoes both halves):
+Install-EnPatch.ps1 -Restore
 ```
 
-DMM GAME PLAYER verifies the in-app bundle before it starts the game, so the
-English file can't stay installed. The watcher stages it next to the stock file,
-swaps the two by renaming as soon as the game process appears (before Unity opens
-the bundle), and swaps them back when the game exits. It repairs a swap left over
-from a crash, and refuses to swap when the installed bundle isn't the stock file
-the build targets.
+- `-Prefabs` downloads `prefab-patch.zip` (~230 MB, the bundles are already compressed),
+  unpacks it to `%LOCALAPPDATA%\MT-EN-Applier\pc\prefab-patch` and installs it with
+  `tools\pc\Install-PrefabPatch.ps1` (md5-gated per bundle, originals backed up).
+- `-FirstLoad` downloads the in-app bundle, writes the metadata
+  `Watch-InappSwap.ps1` verifies against, and starts that watcher in its own window. It
+  also writes `%LOCALAPPDATA%\MT-EN-Applier\pc\Play-in-English.cmd`, which is what the
+  player starts the game with from then on: DMM verifies the in-app bundle before it
+  starts the game, so the English file can only be in place while the game runs.
 
-Not wired into `Install-EnPatch.ps1` or the release yet. That needs the two builds
-published on `patch-latest`; see the PR description.
+## Publishing (maintainer)
+
+```powershell
+powershell -File tools\pc\maintainer\Publish-PcPatch.ps1            # stage, review
+powershell -File tools\pc\maintainer\Publish-PcPatch.ps1 -Publish   # upload to patch-latest
+```
+
+It refuses to publish the prefab zip unless every `src_md5` in `manifest.json` still
+matches the local cache (i.e. the build was made from the stock cache the players have),
+and it uploads `version.json` last so no installer sees a version.json that points at
+files which aren't uploaded yet.

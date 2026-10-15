@@ -16,7 +16,7 @@ import UnityPy
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-KNOWN_OFFSETS = [(0xBA5AB8, 0xBA8538), (0xBC3DF0, 0xBC6870)]  # PC 1.2.0, Android
+KNOWN_OFFSETS = [(0xBA5AB8, 0xBA8538), (0xBC3DF0, 0xBC6870)]  # PC 1.2.0, then Android (client 1.2.0)
 
 
 def decode(raw):
@@ -100,29 +100,65 @@ def find_keys(metadata_path, bundle_path):
 
     def iv_for(key, ko):
         d0 = AES.new(key, AES.MODE_ECB).decrypt(c0)
-        near = range(max(0, ko - 0x10000), min(len(meta) - 16, ko + 0x10000))
-        for io in list(near) + list(range(len(meta) - 16)):
+        lo, hi = max(0, ko - 0x10000), min(len(meta) - 16, ko + 0x10000)
+
+        def iv_at(io):
             iv = decode(meta[io:io + 16])
             pt0 = bytes(a ^ b for a, b in zip(d0, iv))
             if pt0.startswith(b"id\t"):
                 try:
                     pt0.decode("utf-8")
-                    return iv, io
+                    return iv
                 except UnicodeDecodeError:
                     pass
+            return None
+
+        for io in range(lo, hi):            # the IV sits near the key
+            iv = iv_at(io)
+            if iv:
+                return iv, io
+        for io in range(len(meta) - 16):
+            if lo <= io < hi:
+                continue
+            iv = iv_at(io)
+            if iv:
+                return iv, io
         return None, None
 
     for ko, io in KNOWN_OFFSETS:
         key, iv = decode(meta[ko:ko + 32]), decode(meta[io:io + 16])
         if _body_ok(key, ct) and AES.new(key, AES.MODE_CBC, iv).decrypt(c0).startswith(b"id\t"):
             return key, iv, ko, io
-    for ko in range(len(meta) - 32):
+
+    # Fallback for a build whose metadata moved the key: the offsets shift by a
+    # few KB, so scan the neighbourhoods of the known ones first and only then
+    # the whole file. One AES block per candidate is the entire cost, since
+    # _plausible rejects almost all of them (a minute or two on 23 MB).
+    near = set()
+    for k in (o for pair in KNOWN_OFFSETS for o in pair):
+        near.update(range(max(0, k - 0x20000), min(len(meta) - 32, k + 0x20000)))
+
+    def try_key(ko):
         key = decode(meta[ko:ko + 32])
         p1 = bytes(a ^ b for a, b in zip(AES.new(key, AES.MODE_ECB).decrypt(c1), c0))
         if _plausible(p1) and _body_ok(key, ct):
             iv, io = iv_for(key, ko)
             if iv:
                 return key, iv, ko, io
+        return None
+
+    for ko in near:
+        hit = try_key(ko)
+        if hit:
+            return hit
+    print(f"key not near a known offset; scanning {len(meta) // 1024} KB of metadata ...",
+          file=sys.stderr, flush=True)
+    for ko in range(len(meta) - 32):
+        if ko in near:
+            continue
+        hit = try_key(ko)
+        if hit:
+            return hit
     raise SystemExit("AES key not found in " + metadata_path)
 
 

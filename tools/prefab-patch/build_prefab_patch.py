@@ -5,8 +5,14 @@ TextMeshPro/uGUI `m_text`; the translated bundles are written, mirroring the
 cache layout, to <out>/<name-hash>/<content-hash>/__data with manifest.json
 (source and patched md5 per bundle) for tools/pc/Install-PrefabPatch.ps1.
 Only the text objects change; every other object stays byte-identical and the
-original block compression (LZ4HC) is kept. These bundles are loaded without
-a cached-CRC check (m_UseCrcForCachedBundles is false for all of them).
+original block compression (LZ4HC) is kept.
+
+Bundles whose catalog entry has m_UseCrcForCachedBundles set are left alone and
+listed in <out>/crc-checked.json: the game verifies those against the catalog's
+CRC when it loads them from the cache, so a rewritten file would fail with
+"Failed to acquire resources". (Only the language bundle and 76 others are
+marked that way; none of them carries UI text today, but the flag is a property
+of the catalog, not of these bundles.)
 
   python -I -X utf8 build_prefab_patch.py --translation-cache translation_cache.json [--out DIR]
 
@@ -14,6 +20,7 @@ Japanese with no translation is left as is and listed in <out>/untranslated.json
 add those lines to translations/en/prefab/ui-prefab.json and rebuild.
 """
 import argparse
+import base64
 import glob
 import hashlib
 import json
@@ -34,6 +41,39 @@ _tr = None
 def _init(cache_json, prefab_map):
     global _tr
     _tr = Translator(cache_json, prefab_map)
+
+
+def bundle_hashes(path):
+    """The two hashes in <name-hash>/<content-hash>/__data; the catalog names
+    bundles by the second one, the cache folder uses the first."""
+    parts = path.replace("\\", "/").split("/")
+    return parts[-3], parts[-2]
+
+
+def crc_checked_bundles(catalog_json):
+    """Bundle hashes whose catalog entry has m_UseCrcForCachedBundles set.
+
+    Those are verified against the catalog's CRC when the game loads them from
+    the cache, so rewriting one breaks loading. The catalog keeps the per-bundle
+    options in m_ExtraDataString (base64 of UTF-16 JSON objects)."""
+    raw = catalog_json.get("m_ExtraDataString") or ""
+    if not raw:
+        return set()
+    try:
+        text = base64.b64decode(raw).decode("utf-16-le", "ignore")
+    except ValueError:
+        return set()
+    out = set()
+    for m in re.finditer(r'\{"m_Hash".*?"m_ClearOtherCachedVersionsWhenLoaded":(?:true|false)\}', text):
+        try:
+            entry = json.loads(m.group())
+        except ValueError:
+            continue
+        if entry.get("m_UseCrcForCachedBundles") and entry.get("m_Crc"):
+            name = entry.get("m_BundleName")
+            if name:
+                out.add(name)
+    return out
 
 
 def patch_bundle(path, rel):
@@ -84,13 +124,22 @@ def main():
     a = ap.parse_args()
 
     cache = a.cache or paths.cache_dir()
-    ids = json.load(open(a.catalog or paths.newest_catalog(), encoding="utf-8"))["m_InternalIds"]
+    catalog = json.load(open(a.catalog or paths.newest_catalog(), encoding="utf-8"))
+    ids = catalog["m_InternalIds"]
     current = {m.group(1) for x in ids for m in [re.search(r"_([0-9a-f]{32})\.bundle$", x)] if m}
-    bundles = [p for p in glob.glob(os.path.join(cache, "*", "*", "__data"))
-               if os.path.basename(os.path.dirname(p)) in current]
-    print(len(bundles), "cached bundles in the current catalog", flush=True)
+    checked = crc_checked_bundles(catalog)
+    bundles, kept_stock = [], []
+    for p in glob.glob(os.path.join(cache, "*", "*", "__data")):
+        name, content = bundle_hashes(p)
+        if content not in current:
+            continue
+        (kept_stock if (name in checked or content in checked) else bundles).append(p)
+    print(len(bundles), "cached bundles in the current catalog;", len(kept_stock),
+          "left stock (the game CRC-checks them)", flush=True)
 
     os.makedirs(a.out, exist_ok=True)
+    json.dump(sorted("/".join(p.replace("\\", "/").split("/")[-3:]) for p in kept_stock),
+              open(os.path.join(a.out, "crc-checked.json"), "w"), indent=1)
     manifest, untranslated = [], set()
     with ProcessPoolExecutor(a.workers, initializer=_init, initargs=(a.translation_cache, a.prefab_map)) as ex:
         futs = []
@@ -113,6 +162,8 @@ def main():
               ensure_ascii=False, indent=1)
     print(len(manifest), "bundles,", sum(r["changed"] for r in manifest), "text fields;",
           len(untranslated), "strings left untranslated (untranslated.json)")
+    if kept_stock:
+        print(len(kept_stock), "bundles left stock because the game CRC-checks them (crc-checked.json)")
 
 
 if __name__ == "__main__":
