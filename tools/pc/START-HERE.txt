@@ -54,7 +54,7 @@ anything about PowerShell or command lines. Just follow the 3 steps.
   Just press Enter, or wait - after 60 seconds it goes ahead with
   yes anyway. The English text and the English first-load screen
   install either way; the images are logos, banners, buttons and
-  tutorial captions. The whole download is about 120 MB, and it
+  tutorial captions. The whole download is about 125 MB, and it
   happens before the question, so answering N saves no bandwidth.
   Answer N if you would rather leave the game's art untouched.
 

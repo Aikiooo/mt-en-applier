@@ -41,7 +41,7 @@ instead with `-WithAssets` (no question), `-NoImages` (text only), or
 `-LanguageOnly` (language bundle alone). Answering no saves no bandwidth — the
 images arrive inside the same zip — it only leaves them Japanese.
 
-It asks because it rewrites files the game ships (~120 MB: ~55 MB of prefab and
+It asks because it rewrites files the game ships (~125 MB: ~63 MB of prefab and
 image bundles + 61 MB in-app + the language bundle), and because the in-app half
 cannot stay installed — DMM verifies that file before it starts the game, so a
 small watcher swaps it in as the game starts and puts the stock file back on

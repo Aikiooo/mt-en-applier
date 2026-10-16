@@ -18,7 +18,7 @@
   so answering no saves no bandwidth): it defaults to yes, and sixty seconds of
   silence means yes as well.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
-    to the language bundle (~55 MB download, once per game build). They carry
+    to the language bundle (~63 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
     never overwrites at runtime, and the English versions of the images with
     Japanese lettering (logos, banners, buttons, tutorial captions).
@@ -482,11 +482,11 @@ $stockBoot  = Join-Path $PatchDataDir 'stock_boot.config'
 
 if ($useInapp) {
     # The published stock_md5 supersedes the snapshot, and the staged file is
-    # 63 MB: do not copy it in only to delete it two steps later.
+    # 61 MB: do not copy it in only to delete it two steps later.
     Remove-Item -LiteralPath $stockInapp -Force -ErrorAction SilentlyContinue
 } else {
     # If the live inapp is currently stock (not our EN patch), snapshot it as stock.
-    # Only the patch's md5 is needed for that, so the 63 MB patch isn't downloaded.
+    # Only the patch's md5 is needed for that, so the 61 MB patch isn't downloaded.
     $liveMd5  = Get-Md5 $liveInapp
     $patchMd5 = $art.Want.inapp.md5
     if ($liveMd5 -ne $patchMd5) {
