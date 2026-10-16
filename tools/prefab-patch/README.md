@@ -105,7 +105,7 @@ Install-EnPatch.ps1 -Restore
 and leave the image-only bundles stock (that is what answering no to the question
 does), and `-Check` / `-Restore` as before.
 
-- `-Prefabs` downloads `prefab-patch.zip` (~41 MB: the bundles are already compressed),
+- `-Prefabs` downloads `prefab-patch.zip` (~39.5 MB: the bundles are already compressed),
   unpacks it to `%LOCALAPPDATA%\MT-EN-Applier\pc\prefab-patch` and installs it with
   `tools\pc\Install-PrefabPatch.ps1` (md5-gated per bundle, originals backed up).
 - `-FirstLoad` downloads the in-app bundle, writes the metadata

@@ -18,7 +18,7 @@
   so answering no saves no bandwidth): it defaults to yes, and sixty seconds of
   silence means yes as well.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
-    to the language bundle (~41 MB download, once per game build). They carry
+    to the language bundle (~39.5 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
     never overwrites at runtime, and the English versions of the images with
     Japanese lettering (logos, banners, buttons, tutorial captions).
@@ -123,7 +123,9 @@ $inappMeta = Join-Path $PatchDataDir $InappMetaName
 $settingsPath = Join-Path $PatchDataDir 'settings.json'
 
 # Unpack a published tree into a fresh folder and swap it in, so a failed extract
-# cannot take the previous tree (and its manifest) with it. Returns the manifest.
+# cannot take the previous tree (and its manifest) with it. Returns nothing:
+# "return , $array" nests the array through the caller in Windows PowerShell 5.1,
+# so callers read the manifest from disk instead.
 function Expand-PatchZip([string]$Zip, [string]$Dest) {
     $newDir = "$Dest.new"
     if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
@@ -139,10 +141,8 @@ function Expand-PatchZip([string]$Zip, [string]$Dest) {
         New-Item -ItemType Directory -Force -Path $newDir | Out-Null
         Expand-Archive -LiteralPath $Zip -DestinationPath $newDir -Force
     }
-    $manifest = @(Get-Content -LiteralPath (Join-Path $newDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json)
     if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
     Move-Item -LiteralPath $newDir -Destination $Dest
-    return , $manifest
 }
 
 function Plural([int]$N, [string]$Word) {
@@ -421,14 +421,19 @@ if ($Check) {
             $manifestPath = Join-Path $prefabDir 'manifest.json'
             $imageManifestPath = Join-Path $prefabDir 'manifest-images.json'
             if (Test-Path -LiteralPath $manifestPath) {
-                foreach ($e in @(Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)) {
+                # Assign then wrap: no @() around the pipeline, because Windows
+                # PowerShell 5.1 does not enumerate a JSON array out of
+                # ConvertFrom-Json, so @() would make it one item.
+                $prefabManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($e in @($prefabManifest)) {
                     if (-not $cache) { continue }
                     $t = Join-Path $cache ($e.rel -replace '/', '\')
                     if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) { $done++ }
                 }
             }
             if (Test-Path -LiteralPath $imageManifestPath) {
-                $imageManifest = @(Get-Content -LiteralPath $imageManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+                $imageManifest = Get-Content -LiteralPath $imageManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $imageManifest = @($imageManifest)
                 $imageOnly = $imageManifest.Count
                 if ($cache) {
                     foreach ($e in $imageManifest) {
@@ -555,7 +560,9 @@ if (-not $res.SizeOk) {
 # --- 7. prefab bundles (persistent, same cache as the language bundle) -------
 if ($usePrefabs) {
     Write-Host 'unpacking the English UI prefabs ...'
-    $manifest = Expand-PatchZip -Zip $art.Files.prefab -Dest $prefabDir
+    Expand-PatchZip -Zip $art.Files.prefab -Dest $prefabDir
+    $manifest = Get-Content -LiteralPath (Join-Path $prefabDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $manifest = @($manifest)
     $textCount = @($manifest | Where-Object { (Get-Prop $_ 'changed') }).Count
     Write-Host "  text bundles : $textCount (published: $($prefabPub.bundles))"
     try {
@@ -574,12 +581,12 @@ if ($usePrefabs) {
     if ($imagePub) {
         $withImages = -not $NoImages
         if ($withImages -and -not $WithAssets) {
-            $withImages = Read-YesNo "Also install the English images? ($(Plural @($imagePub.bundles).Count 'bundle'): logos, banners, badges, tutorial captions; $([math]::Round([int64]$imagePub.size / 1MB, 1)) MB download)" 60 $true
+            $withImages = Read-YesNo "Also install the English images? ($(Plural ([int]$imagePub.bundles) 'bundle'): logos, banners, badges, tutorial captions; $([math]::Round([int64]$imagePub.size / 1MB, 1)) MB download)" 60 $true
         }
         if ($withImages) {
             Write-Host "fetching the English images ($([math]::Round([int64]$imagePub.size / 1MB, 1)) MB) ..."
             $imgZip = Get-VerifiedFile -Name (Get-Prop $imagePub 'file') -Want $imagePub -Force:$Force
-            $imgManifest = Expand-PatchZip -Zip $imgZip -Dest (Join-Path $PatchDataDir 'prefab-images')
+            Expand-PatchZip -Zip $imgZip -Dest (Join-Path $PatchDataDir 'prefab-images')
             try {
                 $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir (Join-Path $PatchDataDir 'prefab-images')
                 if ($res -and $res.missing) { Write-Host 'Some image bundles were not in the cache yet (see above).' }
@@ -587,7 +594,7 @@ if ($usePrefabs) {
                 Write-Host "NOTE: the image install stopped: $($_.Exception.Message)"
             }
         } else {
-            Write-Host "$(Plural @($imagePub.bundles).Count 'image bundle') left Japanese. Re-run with -WithAssets (or answer yes) to add them."
+            Write-Host "$(Plural ([int]$imagePub.bundles) 'image bundle') left Japanese. Re-run with -WithAssets (or answer yes) to add them."
         }
     }
 }
