@@ -594,7 +594,9 @@ if ($usePrefabs) {
                 Write-Host "NOTE: the image install stopped: $($_.Exception.Message)"
             }
         } else {
-            Write-Host "$(Plural ([int]$imagePub.bundles) 'image bundle') left Japanese. Re-run with -WithAssets (or answer yes) to add them."
+            # Not "left Japanese": they may already be installed from an earlier
+            # run, and answering no simply leaves them as they are.
+            Write-Host "English images skipped. Add them later with -WithAssets (or by answering yes)."
         }
     }
 }
