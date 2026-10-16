@@ -132,7 +132,11 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Publish
 powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PatchFile path\to\__data_es -Stock path\to\android_stock -Publish
 
 # also offer it on PC: an exact-size, CRC-forged bundle for the current PC build
-powershell -File tools	ranslations\Publish-Locale.ps1 -Locale es -PcPatchFile path	o\language-ja_es.bundle -Publish
+powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PcPatchFile path\to\language-ja_es.bundle -Publish
+
+# the whole PC patch, like English: language bundle, UI prefabs + images, title screen
+powershell -File tools\translations\Publish-Locale.ps1 -Locale fr -BuildPcPatch `
+    -PcPrefabDir build\prefab-patch-fr -PcInappBuild build\inapp_assets_all_fr.bundle -Publish
 
 # withdraw a language from the app
 powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Publish
@@ -145,6 +149,17 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Pu
 - PC: the installer offers a language only when its bundle targets the current PC
   game build (same asset hash as English), and the bundle must be exactly the
   English bundle's size (the PC catalog pins it).
+- PC assets: build `-PcPrefabDir` with `tools/prefab-patch/build_prefab_patch.py`
+  (`--translation-cache` this locale's cache, `--prefab-map
+  translations/<code>/prefab/ui-prefab.json`, `--textures translations/<code>/textures`)
+  and `-PcInappBuild` with `tools/prefab-patch/build_inapp.py`, both from a **stock**
+  cache and game (`Install-PrefabPatch.ps1 -Restore` first): a bundle built from an
+  already patched file is refused on every player's machine. They go under
+  `locales.<code>.pc` as `prefab_patch`, `prefab_images` and `inapp`, and the
+  installer installs them exactly as it does English's. `label` (from
+  `locales.json`) names the launcher: `Play-in-French.cmd`.
+- The installer scripts themselves (`tools/pc/*.ps1`, `MT.EnPatch.psm1`) must be on
+  the release too: older copies ignore everything but the language bundle.
 - The app hides a language's Download once the game updates (the patch's
   `stock_md5` no longer matches the release's), leaving Auto-patch.
 - `update_translation.py` rewrites `version.json` on every English release, which

@@ -1,8 +1,8 @@
 {
   "default": "en",
   "locales": {
-    "en": { "name": "English" },
-    "es": { "name": "Español" },
-    "fr": { "name": "Français" }
+    "en": { "name": "English", "label": "English" },
+    "es": { "name": "Español", "label": "Spanish" },
+    "fr": { "name": "Français", "label": "French" }
   }
 }
