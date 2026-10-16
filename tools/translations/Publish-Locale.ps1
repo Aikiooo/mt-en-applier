@@ -89,6 +89,8 @@ param(
     # {"key_hex": ..., "iv_hex": ...} for -BuildPatch.
     [string]$KeysJson,
     [string]$Lz4Jar,
+    # Java LZMA decoder for -BuildPatch (the game's own bundles use LZMA blocks).
+    [string]$XzJar,
     [switch]$Unpublish,
     # Publish even if nothing is translated yet, or the stock isn't the release's.
     [switch]$Force,
@@ -189,16 +191,23 @@ if ($Unpublish) {
                 Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1 -ExpandProperty FullName
         }
         if (-not $Lz4Jar) { Fail "lz4-java jar not found; build the app once with Gradle or pass -Lz4Jar" }
+        if (-not $XzJar) {
+            $XzJar = Get-ChildItem -Path (Join-Path $env:USERPROFILE '.gradle\caches\modules-2\files-2.1\org.tukaani\xz') `
+                -Recurse -Filter 'xz-*.jar' -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1 -ExpandProperty FullName
+        }
+        if (-not $XzJar) { Fail "xz jar not found; build the app once with Gradle or pass -XzJar" }
+        $cp = "$Lz4Jar;$XzJar"
 
         $classes = Join-Path $OutDir 'autopatcher-classes'
         if (Test-Path -LiteralPath $classes) { Remove-Item -LiteralPath $classes -Recurse -Force }
         New-Item -ItemType Directory -Path $classes | Out-Null
         $core = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app\src\main\java\com\mtpatch\enapply\core') -Filter *.java |
             ForEach-Object { $_.FullName }
-        & javac -nowarn -encoding UTF-8 -d $classes -cp $Lz4Jar @core
+        & javac -nowarn -encoding UTF-8 -d $classes -cp $cp @core
         if ($LASTEXITCODE -ne 0) { Fail "javac failed" }
         $tables = Join-Path $repoRoot 'app\src\main\assets\tables.txt'
-        & java -cp "$classes;$Lz4Jar" com.mtpatch.enapply.core.AutoPatchMain `
+        & java -cp "$classes;$cp" com.mtpatch.enapply.core.AutoPatchMain `
             $Stock $KeysJson $cachePath $tables $patchPath |
             Where-Object { $_ -notmatch ': (fit_after_revert|not found|ambiguous)' }
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $patchPath)) { Fail "AutoPatchMain failed" }

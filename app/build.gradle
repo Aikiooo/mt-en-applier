@@ -60,4 +60,6 @@ dependencies {
     implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'
     // LZ4 (UnityFS block de/recompression) for the on-device auto-patcher.
     implementation 'org.lz4:lz4-java:1.8.0'
+    // LZMA: the game's own bundles use LZMA blocks (flag 1) as well as LZ4.
+    implementation 'org.tukaani:xz:1.10'
 }

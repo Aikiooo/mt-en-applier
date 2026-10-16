@@ -1,6 +1,8 @@
 package com.mtpatch.enapply.core;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.List;
 import net.jpountz.lz4.LZ4Compressor;
 import net.jpountz.lz4.LZ4Factory;
 import net.jpountz.lz4.LZ4FastDecompressor;
+import org.tukaani.xz.LZMAInputStream;
 
 /**
  * UnityFS (signature "UnityFS", ver 8) parse + layout-preserving rebuild.
@@ -114,6 +117,7 @@ public final class UnityFs {
             System.arraycopy(chunk, off, out, 0, len);
             return out;
         }
+        if (comp == 1) return lzma(chunk, off, len, uSize);
         if (comp == 2 || comp == 3) {
             LZ4FastDecompressor d = LZ4Factory.fastestInstance().fastDecompressor();
             byte[] out = new byte[uSize];
@@ -121,6 +125,29 @@ public final class UnityFs {
             return out;
         }
         throw new IllegalArgumentException("block compression " + comp + " unsupported");
+    }
+
+    /** LZMA block: a properties byte, a 4-byte little-endian dictionary size, then raw LZMA1. */
+    private static byte[] lzma(byte[] chunk, int off, int len, int uSize) {
+        int props = chunk[off] & 0xFF;
+        int dictSize = (chunk[off + 1] & 0xFF) | ((chunk[off + 2] & 0xFF) << 8)
+                | ((chunk[off + 3] & 0xFF) << 16) | ((chunk[off + 4] & 0xFF) << 24);
+        // Unity's streams carry an end marker; announcing the size makes the decoder
+        // read past it and report corruption, so pass -1 and check the length instead.
+        try (LZMAInputStream in = new LZMAInputStream(
+                new ByteArrayInputStream(chunk, off + 5, len - 5), -1, (byte) props, dictSize)) {
+            byte[] out = new byte[uSize];
+            int r = 0;
+            while (r < uSize) {
+                int n = in.read(out, r, uSize - r);
+                if (n < 0) break;
+                r += n;
+            }
+            if (r != uSize) throw new IllegalStateException("lzma block short: " + r + " of " + uSize);
+            return out;
+        } catch (IOException e) {
+            throw new IllegalStateException("lzma block: " + e, e);
+        }
     }
 
     /** parse_blocks_info: guid(16) + blocks + nodes from the (decompressed) blocks-info. */
@@ -171,15 +198,7 @@ public final class UnityFs {
         fs.orig = data;
         fs.hdr = readHeader(data);
         int comp = fs.hdr.flags & 0x3F;
-        byte[] biRaw;
-        if (comp == 2 || comp == 3) {
-            biRaw = decompressBlock(data, fs.hdr.blocksInfoAt, fs.hdr.ciSize, fs.hdr.uiSize, comp);
-        } else if (comp == 0) {
-            biRaw = new byte[fs.hdr.ciSize];
-            System.arraycopy(data, fs.hdr.blocksInfoAt, biRaw, 0, fs.hdr.ciSize);
-        } else {
-            throw new IllegalArgumentException("blocks-info compression " + comp);
-        }
+        byte[] biRaw = decompressBlock(data, fs.hdr.blocksInfoAt, fs.hdr.ciSize, fs.hdr.uiSize, comp);
         parseBlocksInfo(biRaw, fs);
         fs.decBlocks = new byte[fs.blocks.length][];
         int pos = fs.hdr.dataStart;
