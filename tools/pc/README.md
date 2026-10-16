@@ -22,26 +22,30 @@ To check first without changing anything:
 
 **Fully English on the first load (PC only).** Without the extra pieces, a few
 screens stay Japanese until you go back to the title menu once. Two of them fix
-that — the English text baked into the game's cached UI prefabs, and the English
-in-app bundle the first load's title screen reads — and the installer **asks**
-before doing it:
+that: the English text baked into the game's cached UI prefabs, and the English
+in-app bundle the first load's title screen reads. Those install without asking —
+they're what this patch has always done, just more of it.
+
+The **redrawn images** (logos, banners, buttons, badges, tutorial captions) are a
+visible change to the art, so the installer asks about them once the download is
+unpacked:
 
 ```
-Also install the full English UI text? (rewrites the text the game ships: the
-cached UI prefabs, their images and the first-load screen; ~120 MB)
+Also install the English images? (113 bundles: logos, banners, badges,
+tutorial captions - already in the download)
     [Y] yes (default)   [N] no    ... 60 s
 ```
 
-Yes is the default, and sixty seconds of silence means yes, so a plain run ends
-up fully English either way. Answer it up front instead with `-WithAssets` (no
-question) or `-LanguageOnly` (language bundle only); `-Prefabs` and `-FirstLoad`
-are the two halves.
+Yes is the default and sixty seconds of silence means yes. Answer it up front
+instead with `-WithAssets` (no question), `-NoImages` (text only), or
+`-LanguageOnly` (language bundle alone). Answering no saves no bandwidth — the
+images arrive inside the same zip — it only leaves them Japanese.
 
-It asks because it rewrites files the game ships (~120 MB: 55 MB of prefabs +
-61 MB in-app + the language bundle), and because the in-app half cannot stay
-installed — DMM verifies that file before it starts the game, so a small watcher
-swaps it in as the game starts and puts the stock file back on exit. The
-installer starts that watcher for the current session and writes
+It asks because it rewrites files the game ships (~120 MB: ~55 MB of prefab and
+image bundles + 61 MB in-app + the language bundle), and because the in-app half
+cannot stay installed — DMM verifies that file before it starts the game, so a
+small watcher swaps it in as the game starts and puts the stock file back on
+exit. The installer starts that watcher for the current session and writes
 **`Play-in-English.cmd`** (`%LOCALAPPDATA%\MT-EN-Applier\pc`) — use it for later
 sessions, then click Play.
 

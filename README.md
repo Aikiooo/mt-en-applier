@@ -63,16 +63,18 @@ irm https://github.com/Aikiooo/mt-en-applier/releases/download/patch-latest/inst
 
 Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game update.
 
-- **Fully English on the first load (default, PC only).** The installer asks one
-  question — *also install the full English UI text?* — and yes is the default, as
-  is 60 seconds of silence. That rewrites the text the game itself ships (the
-  cached UI prefabs and the in-app bundle behind the first-load title screen) and
-  swaps in the English versions of the Japanese images (logos, banners, buttons,
-  tutorial captions), so nothing stays Japanese until a second load; it costs ~120 MB.
-  `-WithAssets` answers yes up front, `-LanguageOnly` no. Because the in-app half
-  can't stay installed (DMM verifies that file before launching), a small watcher
-  swaps it in per session: start the game with `Play-in-English.cmd`, then click
-  Play. **[`tools/pc/README.md`](tools/pc/README.md)** has the details.
+- **Fully English on the first load (default, PC only).** The text the game itself
+  ships — the cached UI prefabs and the in-app bundle behind the first-load title
+  screen — installs without asking; that's what the patch has always done, just
+  more of it. The **redrawn images** (logos, banners, buttons, badges, tutorial
+  captions) are the one thing it asks about, because they change the art:
+  yes is the default, and so is 60 seconds of silence. They arrive inside the same
+  ~120 MB download, so answering no costs nothing but leaves them Japanese.
+  `-WithAssets` answers yes up front, `-NoImages` and `-LanguageOnly` say no.
+  Because the in-app half can't stay installed (DMM verifies that file before
+  launching), a small watcher swaps it in per session: start the game with
+  `Play-in-English.cmd`, then click Play.
+  **[`tools/pc/README.md`](tools/pc/README.md)** has the details.
 - **No terminal?** Download the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases/tag/pc-v1),
   extract it and double-click `Install-EnPatch.bat`. `START-HERE.txt` inside is the
   whole guide.

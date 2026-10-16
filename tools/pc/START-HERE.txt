@@ -46,15 +46,17 @@ anything about PowerShell or command lines. Just follow the 3 steps.
 
         Install-EnPatch.bat
 
-  A window opens. It asks ONE question:
+  A window opens. It asks ONE question, about the redrawn images:
 
-        Also install the full English UI text? ...
+        Also install the English images? ...
             [Y] yes (default)   [N] no    ... 60 s
 
   Just press Enter, or wait - after 60 seconds it goes ahead with
-  yes anyway. That is what makes the first screen English instead
-  of partly Japanese; it downloads about 120 MB. Answer N if you
-  would rather have the smaller, language-only patch.
+  yes anyway. The English text and the English first-load screen
+  install either way; the images are logos, banners, buttons and
+  tutorial captions. The whole download is about 120 MB, and it
+  happens before the question, so answering N saves no bandwidth.
+  Answer N if you would rather leave the game's art untouched.
 
   When it says "Install complete", press any key to close it.
 

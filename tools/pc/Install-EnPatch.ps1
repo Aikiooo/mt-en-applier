@@ -11,23 +11,26 @@
   - Captures clean stock copies (inapp bundle + boot.config) so DMM file
     repairs stay reversible.
 
-  It also rewrites the text the game ships itself, which is the part that makes
-  the first load English instead of "load twice". That is a bigger download and
-  it touches the game's own files, so it asks first: the question defaults to
-  yes, and sixty seconds of silence means yes as well, so the one-line install
-  still ends up fully English.
+  It also rewrites the text the game ships itself, and the redrawn images that
+  carry Japanese lettering. The text installs without asking - it is what this
+  patch has always done. The images are a visible change to the art, so they get
+  the question, once the download is unpacked (they arrive inside the same zip,
+  so answering no saves no bandwidth): it defaults to yes, and sixty seconds of
+  silence means yes as well.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
     to the language bundle (~55 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
     never overwrites at runtime, and the English versions of the images with
     Japanese lettering (logos, banners, buttons, tutorial captions).
   - -FirstLoad stages the English in-app bundle and starts the swap watcher, so
-    the first load's title screen is English too. DMM verifies that file before
-    starting the game, so it can only be in place while the game runs: the
-    watcher swaps it in as the game starts and puts the stock file back on exit.
-    Run it before each session through the generated Play-in-English.cmd.
+    the first load's title screen is English too (its tables, its baked strings
+    and its title logo). DMM verifies that file before starting the game, so it
+    can only be in place while the game runs: the watcher swaps it in as the game
+    starts and puts the stock file back on exit. Run it before each session
+    through the generated Play-in-English.cmd.
   Both are English-only, so a non-English -Language skips them silently.
-  -WithAssets answers the question up front; -LanguageOnly refuses it.
+  -WithAssets answers the image question up front, -NoImages refuses it, and
+  -LanguageOnly refuses everything but the language bundle.
 
   Languages: only the ones published for the current game build are offered.
   With one (English) there is no menu; with several, a short menu appears
@@ -38,8 +41,9 @@
   Play-in-English.cmd per session if the in-app half is installed).
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1                  # asks, default yes
-  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -WithAssets      # no question, full install
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1                  # asks about the images
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -WithAssets      # no question, everything
+  powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -NoImages        # text/prefabs, no images
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -LanguageOnly    # language bundle only
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -GameDir 'D:\Games\mushoku_coe_cl' -Force
   powershell -ExecutionPolicy Bypass -File Install-EnPatch.ps1 -Language es
@@ -63,6 +67,8 @@ param(
     [switch]$WithAssets,
     # Language bundle only: no prompt, no asset patching.
     [switch]$LanguageOnly,
+    # Text and prefabs, but not the redrawn images.
+    [switch]$NoImages,
     # Do not start the watcher (used by -Check; the caller may do it itself).
     [switch]$NoWatcher
 )
@@ -73,6 +79,10 @@ Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 
 if ($WithAssets) { $Prefabs = $true; $FirstLoad = $true }
 if ($LanguageOnly) { $Prefabs = $false; $FirstLoad = $false }
+# The text side is what this patch has always done and is no more invasive than
+# it was, so it installs without asking. The images are the new, visible change,
+# so they are the thing the question below is about.
+if (-not ($Prefabs -or $FirstLoad) -and -not $LanguageOnly) { $Prefabs = $true; $FirstLoad = $true }
 
 # Ask before doing the part that rewrites the game's own shipped text, but never
 # block a run without a console on it: the default is yes, and 60 seconds of
@@ -376,15 +386,26 @@ if ($Check) {
             # Count what is actually in place, not what was installed once: a
             # restore leaves the backups behind.
             $done = 0
+            $doneImages = 0
+            $imageOnly = 0
+            $textBundles = 0
             $manifestPath = Join-Path $prefabDir 'manifest.json'
             $cache = Get-UnityCachePublisherDir
-            if ($cache -and (Test-Path -LiteralPath $manifestPath)) {
-                foreach ($e in (Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)) {
+            if (Test-Path -LiteralPath $manifestPath) {
+                $manifest = @(Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+                foreach ($e in $manifest) {
+                    $isImageOnly = (Get-Prop $e 'textures') -and -not (Get-Prop $e 'changed')
+                    if ($isImageOnly) { $imageOnly++ } else { $textBundles++ }
+                    if (-not $cache) { continue }
                     $t = Join-Path $cache ($e.rel -replace '/', '\')
-                    if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) { $done++ }
+                    if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) {
+                        $done++
+                        if ($isImageOnly) { $doneImages++ }
+                    }
                 }
             }
             $state = if ($done) { "$done of $($prefabPub.bundles) bundles in place" } else { 'not installed' }
+            if ($done -and $imageOnly) { $state += " (images $doneImages of $imageOnly)" }
             Write-Host "prefabs      : $($prefabPub.bundles) bundles, $([math]::Round([int64]$prefabPub.size / 1MB, 1)) MB - $state"
         }
 
@@ -428,14 +449,6 @@ then run this again. (If the game is already up to date, the patch for the new
 version isn't out yet. -Force installs anyway.)
 "@
     exit 1
-}
-
-# Ask before the part that rewrites the game's own shipped text. Skipped when the
-# caller already decided (-WithAssets / -Prefabs / -FirstLoad, or -LanguageOnly),
-# when the language is not English, and in -Check mode.
-if ($chosen.Code -eq 'en' -and -not ($Prefabs -or $FirstLoad) -and -not $LanguageOnly) {
-    $full = Read-YesNo 'Also install the full English UI text? (rewrites the text the game ships: the cached UI prefabs, their images and the first-load screen; ~120 MB)' 60 $true
-    if ($full) { $Prefabs = $true; $FirstLoad = $true }
 }
 
 # Remember the choice and the folder that was found: the watcher falls back to
@@ -524,12 +537,29 @@ if ($usePrefabs) {
         Expand-Archive -LiteralPath $zip -DestinationPath $newDir -Force
     }
     $manifest = Get-Content -LiteralPath (Join-Path $newDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    $manifest = @($manifest)
     if (Test-Path -LiteralPath $prefabDir) { Remove-Item -LiteralPath $prefabDir -Recurse -Force }
     Move-Item -LiteralPath $newDir -Destination $prefabDir
-    Write-Host "  prefabs : $(@($manifest).Count) bundles (published: $($prefabPub.bundles))"
+
+    # The text side installs without asking (it is what the patch always did).
+    # The redrawn images are a visible change to the art, so they get the
+    # question - after the download, because they arrive in the same zip.
+    $imageOnly = @($manifest | Where-Object { (Get-Prop $_ 'textures') -and -not (Get-Prop $_ 'changed') }).Count
+    $textOnly  = @($manifest | Where-Object { (Get-Prop $_ 'changed') }).Count
+    $withImages = -not $NoImages
+    if ($imageOnly -and -not $NoImages -and -not $WithAssets) {
+        $what = if ($imageOnly -eq 1) { '1 bundle' } else { "$imageOnly bundles" }
+        $withImages = Read-YesNo "Also install the English images? (${what}: logos, banners, badges, tutorial captions - already in the download)" 60 $true
+    }
+    Write-Host "  bundles : $(@($manifest).Count) (published: $($prefabPub.bundles)), $textOnly with text, $imageOnly with images only"
     try {
-        $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir
+        $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir -SkipTextures:(-not $withImages)
         if ($res -and $res.missing) { Write-Host 'Some UI bundles were not in the cache yet (see above).' }
+        if ($res -and $res.images_skipped) {
+            $n = $res.images_skipped
+            $what = if ($n -eq 1) { '1 image bundle' } else { "$n image bundles" }
+            Write-Host "$what left Japanese. Re-run with -WithAssets (or answer yes) to add them."
+        }
     } catch {
         # The language bundle is already seeded; the in-app half below is
         # independent, so a prefab failure must not take it down too.

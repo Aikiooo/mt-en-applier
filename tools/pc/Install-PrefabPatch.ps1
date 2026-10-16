@@ -32,7 +32,11 @@ param(
     # Put the backed-up Japanese bundles back.
     [switch]$Restore,
     # Report only, change nothing.
-    [switch]$Check
+    [switch]$Check,
+    # Install the text/prefab side only: bundles that carry nothing but images
+    # are left alone (the ones carrying text are installed whole, since one file
+    # holds both).
+    [switch]$SkipTextures
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,7 +52,7 @@ if (Get-Process -Name $GameProcessName -ErrorAction SilentlyContinue) { throw 'C
 $cache = Get-UnityCachePublisherDir
 if (-not $cache) { throw 'Unity cache not found. Launch the game once to the title screen.' }
 
-$n = [ordered]@{ installed = 0; already = 0; restored = 0; failed = 0; skipped = 0; missing = 0; nobackup = 0 }
+$n = [ordered]@{ installed = 0; already = 0; restored = 0; failed = 0; skipped = 0; missing = 0; nobackup = 0; images_skipped = 0 }
 $skipped = @()
 $notBackedUp = @()
 
@@ -94,6 +98,8 @@ foreach ($e in $manifest) {
     $rel    = $e.rel -replace '/', '\'
     $target = Join-Path $cache $rel
     $backup = Join-Path $backupDir $rel
+    $imageOnly = $SkipTextures -and (Get-Prop $e 'textures') -and -not (Get-Prop $e 'changed')
+    if ($imageOnly) { $n.images_skipped++; continue }
     if (-not (Test-Path -LiteralPath $target)) { $n.missing++; continue }
     $cur = Get-Md5 $target
     # Our own previous write: the backup holds the stock file this build wants.
@@ -136,4 +142,4 @@ if ($n.missing) {
     Write-Host 'Launch the game once to the title screen so it downloads them, close it, then re-run this installer.'
 }
 return [pscustomobject]@{ mode = $mode; installed = $n.installed; already = $n.already; skipped = $n.skipped
-                          missing = $n.missing; failed = 0 }
+                          missing = $n.missing; failed = 0; images_skipped = $n.images_skipped }

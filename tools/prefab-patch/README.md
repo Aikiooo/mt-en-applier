@@ -86,12 +86,13 @@ py -I -X utf8 tools\prefab-patch\build_inapp.py --language-bundle language-ja_en
 
 ## Install (player)
 
-Wired into the normal installer, which asks one question (default yes, 60 s of
-silence means yes) before touching the game's own shipped text:
+Wired into the normal installer. The text side installs without asking; the
+redrawn images get one question (default yes, 60 s of silence means yes):
 
 ```powershell
-Install-EnPatch.ps1                # asks, then installs both halves
-Install-EnPatch.ps1 -WithAssets    # no question: both halves
+Install-EnPatch.ps1                # text + images, asks about the images
+Install-EnPatch.ps1 -WithAssets    # no question: images too
+Install-EnPatch.ps1 -NoImages      # no question: text only
 Install-EnPatch.ps1 -LanguageOnly  # no question: language bundle only
 Install-EnPatch.ps1 -Prefabs       # one half on its own
 # one-line, no download of the zip:
@@ -99,6 +100,10 @@ Install-EnPatch.ps1 -Prefabs       # one half on its own
 # back to Japanese (undoes both halves):
 Install-EnPatch.ps1 -Restore
 ```
+
+`Install-PrefabPatch.ps1` takes `-SkipTextures` to install the text/prefab side
+and leave the image-only bundles stock (that is what answering no to the question
+does), and `-Check` / `-Restore` as before.
 
 - `-Prefabs` downloads `prefab-patch.zip` (~55 MB: the bundles are already compressed),
   unpacks it to `%LOCALAPPDATA%\MT-EN-Applier\pc\prefab-patch` and installs it with
