@@ -139,6 +139,23 @@ if ($Locale -ne $defaultLocale) {
     Write-Host "locale '$Locale': $changed / $($canonical.Cache.Count) entries differ from '$defaultLocale' ($pct%)"
 }
 
+# --- date formats ---------------------------------------------------------------
+# Some strings are .NET custom date formats the game passes to DateTime.ToString
+# ("yyyy/MM/dd HH:mmまで"). Literal text in them must be quoted ('Until' ...), and
+# an unpaired apostrophe throws: the screen that formats the date (the gacha
+# list, for one) never finishes loading.
+$badFormats = @()
+foreach ($k in @($canonical.Cache.Keys)) {
+    if ($k -notmatch 'yyyy|MM/dd|HH:mm') { continue }
+    try { [void][datetime]::Now.ToString([string]$canonical.Cache[$k], [Globalization.CultureInfo]::InvariantCulture) }
+    catch { $badFormats += "  $k -> $($canonical.Cache[$k])" }
+}
+if ($badFormats) {
+    Write-Host "ERROR: date formats that DateTime.ToString rejects (quote literal text, escape an apostrophe as \'):"
+    $badFormats | ForEach-Object { Write-Host $_ }
+    exit 1
+}
+
 # --- emit compact, sorted, UTF-8, unescaped-Japanese ---------------------------
 # Sort all keys for determinism. Use ORDINAL (code-point) sorting, matching the
 # original cache (produced by Python's default sort). Culture-aware sorting

@@ -1,7 +1,8 @@
 {
   "default": "en",
   "locales": {
-    "en": { "name": "English" },
-    "es": { "name": "Español" }
+    "en": { "name": "English", "label": "English" },
+    "es": { "name": "Español", "label": "Spanish" },
+    "fr": { "name": "Français", "label": "French" }
   }
 }

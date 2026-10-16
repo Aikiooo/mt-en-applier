@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-  Keeps the English inapp_assets_all.bundle in place only while the game runs.
+  Keeps the translated inapp_assets_all.bundle in place only while the game runs.
 
 .DESCRIPTION
   The first load's title screen comes from the in-app bundle (StreamingAssets),
-  which DMM GAME PLAYER verifies before it starts the game, so the English build
+  which DMM GAME PLAYER verifies before it starts the game, so the translated build
   cannot stay installed. Start this watcher, then click Play in DMM: it stages
-  the English file next to the game folder, waits for the game process, swaps the
+  the translated file next to the game folder, waits for the game process, swaps the
   two (a single File.Replace, before Unity opens the bundle) and swaps them back
   when the game exits. DMM always finds the stock file.
 
@@ -17,13 +17,16 @@
   file, which is what the first release of this tool did.
 
   On start it repairs a swap left over from a crash, and it refuses to swap when
-  the installed bundle is not the stock file the English build was made from, or
+  the installed bundle is not the stock file the translated build was made from, or
   when that file changed while it was waiting (a game update in between). Only
   one watcher runs at a time per game folder.
 
-  English build: %LOCALAPPDATA%\MT-EN-Applier\pc\inapp_assets_all_en.bundle and
-  its .json (stock_md5, md5, stock_size, crc), written by Install-EnPatch.ps1
-  from the release's version.json.
+  Translated build: %LOCALAPPDATA%\MT-EN-Applier\pc\inapp_assets_all_<code>.bundle
+  (inapp_assets_all_en.bundle for English) and its .json (stock_md5, md5,
+  stock_size, crc), written by Install-EnPatch.ps1 from the release's
+  version.json. Play-in-<Language>.cmd passes it with -EnglishBundle (the name
+  predates the other languages); without it, the one the installer set up last
+  is used.
   Log: %LOCALAPPDATA%\MT-EN-Applier\pc\inapp-swap.log
 
 .EXAMPLE
@@ -42,7 +45,16 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot      # absolute even when invoked as -File tools\pc\...
 Import-Module (Join-Path $here 'MT.EnPatch.psm1') -Force
 
-if (-not $EnglishBundle) { $EnglishBundle = Join-Path $PatchDataDir $InappFileName }
+# The installer keeps one language's build at a time; the newest one with its
+# metadata beside it is the one it set up last.
+function Get-PatchedBuilds {
+    @(Get-ChildItem -LiteralPath $PatchDataDir -Filter 'inapp_assets_all_*.bundle' -File -ErrorAction SilentlyContinue |
+      Where-Object { Test-Path -LiteralPath "$($_.FullName).json" } | Sort-Object LastWriteTimeUtc -Descending)
+}
+if (-not $EnglishBundle) {
+    $newest = Get-PatchedBuilds | Select-Object -First 1
+    $EnglishBundle = if ($newest) { $newest.FullName } else { Join-Path $PatchDataDir $InappFileName }
+}
 $metaPath = "$EnglishBundle.json"
 $logPath = Join-Path $PatchDataDir 'inapp-swap.log'
 $settingsPath = Join-Path $PatchDataDir 'settings.json'
@@ -97,7 +109,7 @@ function Resolve-StageDir {
     return (Split-Path $live -Parent)
 }
 $stageDir  = Resolve-StageDir -Requested $StageDir
-$staged    = Join-Path $stageDir ($InappFileName)
+$staged    = Join-Path $stageDir (Split-Path $EnglishBundle -Leaf)
 $stock     = Join-Path $stageDir 'inapp_assets_all.stock.bundle'
 $legacy    = "$live.en"      # the first release staged in place; migrate on sight
 $legacyStock = "$live.stock"
@@ -111,8 +123,14 @@ function Restore-Stock {
         try { $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json } catch { }
     }
     if (-not $meta) {
-        Log 'No metadata beside the English bundle; leaving staged files alone.'
+        Log 'No metadata beside the translated bundle; leaving staged files alone.'
         return
+    }
+    # A crash during a session in another language leaves that build live: it is
+    # still ours, so it is recognised by any build's metadata kept here.
+    $ours = @($meta.md5)
+    foreach ($b in Get-PatchedBuilds) {
+        try { $ours += (Get-Content -LiteralPath "$($b.FullName).json" -Raw | ConvertFrom-Json).md5 } catch { }
     }
     foreach ($pair in @(@($stock, $staged), @($legacyStock, $legacy))) {
         $from = $pair[0]
@@ -123,14 +141,14 @@ function Restore-Stock {
                 # the only one left, so it goes back.
                 [IO.File]::Move($from, $live)
                 Log 'Put the stock in-app bundle back (the game folder had none).'
-            } elseif ((Get-Md5 $live) -eq $meta.md5) {
-                # English is live: park it (reused next session) and restore stock.
+            } elseif ($ours -contains (Get-Md5 $live)) {
+                # Ours is live: park it (reused next session) and restore stock.
                 [IO.File]::Replace($from, $live, $staged, $true)
                 Log 'Restored the stock in-app bundle left over from a previous run.'
             } elseif ((Get-Md5 $live) -eq $meta.stock_md5) {
                 Remove-Item -LiteralPath $from -Force             # both stock; drop the copy
             } else {
-                Log ('Leaving ' + $from + ' alone: the installed bundle is neither the stock nor the English build.')
+                Log ('Leaving ' + $from + ' alone: the installed bundle is neither the stock nor a translated build.')
             }
         } catch {
             Log ('Could not repair from ' + $from + ': ' + $_.Exception.Message)
@@ -147,18 +165,18 @@ try {
 
     $meta = Get-Content -LiteralPath $metaPath -Raw | ConvertFrom-Json
     if ((Get-Md5 $live) -ne $meta.stock_md5) {
-        Log 'The installed in-app bundle is not the one the English build targets (game update?). Not swapping.'
+        Log 'The installed in-app bundle is not the one the translated build targets (game update?). Not swapping.'
         exit 2
     }
     $liveStamp = (Get-Item -LiteralPath $live).LastWriteTimeUtc
     $liveSize  = (Get-Item -LiteralPath $live).Length
 
     if ((Test-Path -LiteralPath $staged) -and ((Get-Md5 $staged) -eq $meta.md5)) {
-        Log 'English in-app bundle already staged.'
+        Log 'Translated in-app bundle already staged.'
     } else {
         Copy-Item -LiteralPath $EnglishBundle -Destination $staged -Force
-        if ((Get-Md5 $staged) -ne $meta.md5) { throw 'Staged English bundle failed its md5 check.' }
-        Log 'English in-app bundle staged.'
+        if ((Get-Md5 $staged) -ne $meta.md5) { throw 'Staged translated bundle failed its md5 check.' }
+        Log ('Translated in-app bundle staged (' + (Split-Path $EnglishBundle -Leaf) + ').')
     }
     Log 'Click Play in DMM GAME PLAYER.'
 
@@ -170,7 +188,7 @@ try {
     }
     if (-not $proc) { Log "Game did not start within $TimeoutSec s; nothing swapped."; exit 3 }
 
-    # A game update while we waited replaces the stock file, and the English
+    # A game update while we waited replaces the stock file, and the translated
     # build's CRC was forged for the one it was made from.
     $now = Get-Item -LiteralPath $live
     if ($now.Length -ne $liveSize -or $now.LastWriteTimeUtc -ne $liveStamp) {
@@ -178,10 +196,10 @@ try {
         exit 2
     }
 
-    # One atomic-ish step: the English file takes the live path, the stock file
+    # One atomic-ish step: the translated file takes the live path, the stock file
     # lands in the backup path, so there is no moment without a bundle there.
     [IO.File]::Replace($staged, $live, $stock, $true)
-    Log "Game started (PID $($proc.Id)); English in-app bundle swapped in."
+    Log "Game started (PID $($proc.Id)); translated in-app bundle swapped in."
 
     $proc.WaitForExit()
     for ($i = 0; $i -lt 50; $i++) {   # the file handle can outlive the process briefly

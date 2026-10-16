@@ -113,6 +113,10 @@ does), and `-Check` / `-Restore` as before.
   also writes `%LOCALAPPDATA%\MT-EN-Applier\pc\Play-in-English.cmd`, which is what the
   player starts the game with from then on: DMM verifies the in-app bundle before it
   starts the game, so the English file can only be in place while the game runs.
+- Other languages publish their own builds of both (see
+  [`translations/README.md`](../../translations/README.md#publishing-a-language-to-the-app)):
+  build them with that language's cache, `--prefab-map translations/<code>/prefab/ui-prefab.json`
+  and `--textures translations/<code>/textures`, from the same stock cache.
 
 ## Publishing (maintainer)
 

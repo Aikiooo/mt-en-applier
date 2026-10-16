@@ -162,29 +162,62 @@ function Get-Prop($Obj, [string]$Name) {
 # PC patch languages published on the release: English (the historic top-level
 # "pc" block) first, then every "locales.<code>.pc.language" entry built for the
 # SAME game build (its asset hash matches English's); a stale one is not offered.
-# Each item: @{ Code; Name; File; Want = @{ size; md5; hash } }.
+# Each item: @{ Code; Name; Label; File; Want = @{ size; md5; hash };
+#              Prefab; Images; Inapp }.
+# Prefab / Images / Inapp are that language's own asset builds (the same shape as
+# pc.prefab_patch / pc.prefab_images / pc.inapp_assets_all_en, each with a
+# "file"), or $null when the language publishes none or one for another build.
+# Label is the language's English name, used for Play-in-<Label>.cmd.
 function Get-PcLanguages {
     param([Parameter(Mandatory)]$Version)
-    $en = $Version.pc.language_ja_en
-    $out = @([pscustomobject]@{ Code = 'en'; Name = 'English'; File = $script:LangFileName; Want = $en })
+    $pc = Get-Prop $Version 'pc'
+    $en = Get-Prop $pc 'language_ja_en'
+    $enHash = Get-Prop $en 'hash'
+    # The English in-app entry predates the "file" field.
+    $inappEn = Get-Prop $pc 'inapp_assets_all_en'
+    if ($inappEn -and -not (Get-Prop $inappEn 'file')) {
+        $inappEn = $inappEn.PSObject.Copy()
+        $inappEn | Add-Member -NotePropertyName file -NotePropertyValue $script:InappFileName -Force
+    }
+    if ($inappEn -and -not (Get-Prop $inappEn 'stock_md5')) { $inappEn = $null }
+    $out = @([pscustomobject]@{ Code = 'en'; Name = 'English'; Label = 'English'; File = $script:LangFileName; Want = $en
+                                Prefab = (Get-Prop $pc 'prefab_patch'); Images = (Get-Prop $pc 'prefab_images'); Inapp = $inappEn })
     $locs = Get-Prop $Version 'locales'
     if (-not $locs) { return $out }
-    $enHash = Get-Prop $en 'hash'
     foreach ($p in $locs.PSObject.Properties) {
         $code = $p.Name
         if ($code -eq 'en' -or $code -notmatch '^[A-Za-z0-9_-]{1,16}$') { continue }
-        $w = Get-Prop (Get-Prop $p.Value 'pc') 'language'
-        if (-not $w) { continue }
-        $file = Get-Prop $w 'file'
-        if (-not $file -or $file -notmatch '^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$') { continue }
-        if (-not (Get-Prop $w 'md5') -or -not (Get-Prop $w 'size')) { continue }
-        $hash = Get-Prop $w 'hash'
-        if ($enHash -and $hash -and $hash -ne $enHash) { continue }   # built for another game build
+        $lpc = Get-Prop $p.Value 'pc'
+        $w = Get-Prop $lpc 'language'
+        if (-not (Test-AssetEntry $w $enHash)) { continue }
         $name = Get-Prop $p.Value 'name'
         if (-not $name) { $name = $code }
-        $out += [pscustomobject]@{ Code = $code; Name = $name; File = $file; Want = $w }
+        $label = Get-Prop $p.Value 'label'
+        if (-not $label -or $label -notmatch '^[A-Za-z][A-Za-z]{0,31}$') { $label = $code }
+        $assets = @{}
+        foreach ($k in @('prefab_patch', 'prefab_images', 'inapp')) {
+            $a = Get-Prop $lpc $k
+            $assets[$k] = if (Test-AssetEntry $a $enHash) { $a } else { $null }
+        }
+        # The in-app build only works on the stock file it was forged for.
+        if ($assets.inapp -and -not (Get-Prop $assets.inapp 'stock_md5')) { $assets.inapp = $null }
+        $out += [pscustomobject]@{ Code = $code; Name = $name; Label = $label; File = (Get-Prop $w 'file'); Want = $w
+                                   Prefab = $assets.prefab_patch; Images = $assets.prefab_images; Inapp = $assets.inapp }
     }
     return $out
+}
+
+# A published file entry that is safe to download: a plain file name (it becomes
+# a path under PatchDataDir), a size and md5, and - when it says which game build
+# it was made for - the current one.
+function Test-AssetEntry($Entry, [string]$GameHash) {
+    if (-not $Entry) { return $false }
+    $file = Get-Prop $Entry 'file'
+    if (-not $file -or $file -notmatch '^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$') { return $false }
+    if (-not (Get-Prop $Entry 'md5') -or -not (Get-Prop $Entry 'size')) { return $false }
+    $hash = Get-Prop $Entry 'hash'
+    if ($GameHash -and $hash -and $hash -ne $GameHash) { return $false }
+    return $true
 }
 
 # Download one file from the release, resuming a partial download when there is
@@ -243,22 +276,21 @@ function Get-VerifiedFile {
     return $dst
 }
 
-# Download + verify the chosen language bundle, and optionally the asset patches
-# (the 61 MB in-app bundle, and the prefab zip the installer unpacks itself).
-# Everything is opted into by the caller so a plain language install fetches 1.9 MB.
+# Download + verify the chosen language bundle, and optionally that language's
+# asset patches (the 61 MB in-app bundle, and the prefab zip the installer
+# unpacks itself). Everything is opted into by the caller so a plain language
+# install fetches 1.9 MB.
 function Get-PatchArtifacts {
     param([Parameter(Mandatory)]$Version, [Parameter(Mandatory)]$Language,
           [switch]$IncludeInapp, [switch]$IncludePrefabs, [switch]$Force)
     $files = @{ lang = Get-VerifiedFile -Name $Language.File -Want $Language.Want -Force:$Force }
-    if ($IncludeInapp) {
-        $files.inapp = Get-VerifiedFile -Name $script:InappFileName -Want $Version.pc.inapp_assets_all_en -Force:$Force
+    if ($IncludeInapp -and $Language.Inapp) {
+        $files.inapp = Get-VerifiedFile -Name (Get-Prop $Language.Inapp 'file') -Want $Language.Inapp -Force:$Force
     }
-    if ($IncludePrefabs) {
-        $pp = Get-Prop (Get-Prop $Version 'pc') 'prefab_patch'
-        if ($pp) { $files.prefab = Get-VerifiedFile -Name (Get-Prop $pp 'file') -Want $pp -Force:$Force }
+    if ($IncludePrefabs -and $Language.Prefab) {
+        $files.prefab = Get-VerifiedFile -Name (Get-Prop $Language.Prefab 'file') -Want $Language.Prefab -Force:$Force
     }
-    return @{ Version = $Version; Files = $files; Want = @{ lang = $Language.Want; inapp = $Version.pc.inapp_assets_all_en
-                                                            prefab = (Get-Prop (Get-Prop $Version 'pc') 'prefab_patch') } }
+    return @{ Version = $Version; Files = $files; Want = @{ lang = $Language.Want; inapp = $Language.Inapp; prefab = $Language.Prefab } }
 }
 
 # Seed the exact-size language bundle into the Unity cache __data (catalog untouched).
@@ -293,7 +325,7 @@ function Install-LanguageCache {
     }
 }
 
-Export-ModuleMember -Function Get-Md5, Get-RemoteFile, Get-Prop, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Get-PatchArtifacts, Get-VerifiedFile, Install-LanguageCache `
+Export-ModuleMember -Function Get-Md5, Get-RemoteFile, Get-Prop, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Test-AssetEntry, Get-PatchArtifacts, Get-VerifiedFile, Install-LanguageCache `
                     -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, InappMetaName, PrefabZipName, PrefabImagesZipName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir
