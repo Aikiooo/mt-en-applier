@@ -9,7 +9,9 @@ This rebuilds the stock bundle with:
   1. its e_* tables replaced by the English tables decrypted from the released
      language bundle (same headers; re-encrypted, no size limit here),
   2. its prefab m_text translated (see prefab_text.py),
-  3. its CRC forged back to the stock value. The game loads this bundle with
+  3. its textures that have an English PNG re-encoded (translations/en/textures,
+     e.g. the title logo; see textures.py),
+  4. its CRC forged back to the stock value. The game loads this bundle with
      the stock CRC even though the local catalog declares none (Player.log:
      "CRC Mismatch. Provided …, calculated … Will not load AssetBundle
      inapp_assets_all.bundle", which is the black screen). Unity's CRC is a
@@ -37,6 +39,7 @@ import mtcrypto  # noqa: E402
 import paths  # noqa: E402
 import unityfs  # noqa: E402
 from prefab_text import CJK, Translator, replace, texts  # noqa: E402
+from textures import DEFAULT_DIR as TEXTURE_DIR, set_textures, texture_files  # noqa: E402
 
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 
@@ -65,6 +68,7 @@ def main():
     ap.add_argument("--stock", help="stock inapp_assets_all.bundle (default: the installed one)")
     ap.add_argument("--metadata", help="global-metadata.dat (default: the installed one)")
     ap.add_argument("--out", default=os.path.join(REPO, "build", "inapp_assets_all_en.bundle"))
+    ap.add_argument("--textures", default=TEXTURE_DIR, help='English texture PNGs ("" = none)')
     a = ap.parse_args()
 
     gdir = a.game_dir or (None if (a.stock and a.metadata) else paths.game_dir())
@@ -103,6 +107,7 @@ def main():
                 if n:
                     obj.save_typetree(tree)
                     fields += n
+    textures = set_textures(env, texture_files(a.textures))
 
     data = forge_crc(env.file.save(packer="original"), unityfs.crc(stock))
     # read back: every replaced table must decrypt to the English text
@@ -114,7 +119,8 @@ def main():
     open(a.out, "wb").write(data)
     info = {"stock_md5": hashlib.md5(stock).hexdigest(), "stock_size": len(stock),
             "md5": hashlib.md5(data).hexdigest(), "size": len(data), "crc": f"{unityfs.crc(data):08x}",
-            "tables": tables, "text_fields": fields, "tables_kept_stock": skipped, "untranslated": len(tr.untranslated)}
+            "tables": tables, "text_fields": fields, "tables_kept_stock": skipped, "untranslated": len(tr.untranslated),
+            "textures": sorted(textures)}
     json.dump(info, open(a.out + ".json", "w"), indent=1)
     print(json.dumps(info))
 

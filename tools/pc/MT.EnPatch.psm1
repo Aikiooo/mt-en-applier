@@ -188,7 +188,7 @@ function Get-PcLanguages {
 
 # Download one file from the release, resuming a partial download when there is
 # one. curl.exe ships with Windows 10 1803+ and is the only resumable option in
-# Windows PowerShell 5.1 - the in-app bundle is 63 MB and the prefab zip 40 MB,
+# Windows PowerShell 5.1 - the in-app bundle is 63 MB and the prefab zip 55 MB,
 # so a dropped connection must not restart them. Invoke-WebRequest is the
 # fallback (no resume, and 5.1 throttles it badly unless progress is silenced).
 function Get-RemoteFile {

@@ -17,9 +17,10 @@
   yes, and sixty seconds of silence means yes as well, so the one-line install
   still ends up fully English.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
-    to the language bundle (~40 MB download, once per game build). They carry
+    to the language bundle (~55 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
-    never overwrites at runtime.
+    never overwrites at runtime, and the English versions of the images with
+    Japanese lettering (logos, banners, buttons, tutorial captions).
   - -FirstLoad stages the English in-app bundle and starts the swap watcher, so
     the first load's title screen is English too. DMM verifies that file before
     starting the game, so it can only be in place while the game runs: the
@@ -433,7 +434,7 @@ version isn't out yet. -Force installs anyway.)
 # caller already decided (-WithAssets / -Prefabs / -FirstLoad, or -LanguageOnly),
 # when the language is not English, and in -Check mode.
 if ($chosen.Code -eq 'en' -and -not ($Prefabs -or $FirstLoad) -and -not $LanguageOnly) {
-    $full = Read-YesNo 'Also install the full English UI text? (rewrites the text the game ships: the cached UI prefabs and the first-load screen; ~105 MB)' 60 $true
+    $full = Read-YesNo 'Also install the full English UI text? (rewrites the text the game ships: the cached UI prefabs, their images and the first-load screen; ~120 MB)' 60 $true
     if ($full) { $Prefabs = $true; $FirstLoad = $true }
 }
 

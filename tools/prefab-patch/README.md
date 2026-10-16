@@ -6,8 +6,8 @@ to the title screen.
 
 | Build | Where it goes | What it fixes |
 |-------|---------------|---------------|
-| `build_prefab_patch.py` → 243 cached bundles (`ui_*`, `menu_*`, …) | Unity cache, like the language bundle | ~7,270 Japanese strings baked into prefabs (TextMeshPro `m_text`). Screens built before the language bundle loads showed them, and ~400 static labels were never overwritten at all (Apple/Google sign-in, data-transfer notes, purchase warnings, the Displacement Incident text…). |
-| `build_inapp.py` → `inapp_assets_all_en.bundle` | `StreamingAssets`, only while the game runs (`tools/pc/Watch-InappSwap.ps1`) | The title screen of the first load: it runs from the in-app bundle, which carries its own Japanese/dev copy of the 140 `e_*` tables plus 150 baked strings. |
+| `build_prefab_patch.py` → 353 cached bundles (`ui_*`, `menu_*`, …) | Unity cache, like the language bundle | ~7,270 Japanese strings baked into prefabs (TextMeshPro `m_text`). Screens built before the language bundle loads showed them, and ~400 static labels were never overwritten at all (Apple/Google sign-in, data-transfer notes, purchase warnings, the Displacement Incident text…). Plus 137 textures with Japanese lettering, redrawn in English (see [Textures](#textures)). |
+| `build_inapp.py` → `inapp_assets_all_en.bundle` | `StreamingAssets`, only while the game runs (`tools/pc/Watch-InappSwap.ps1`) | The title screen of the first load: it runs from the in-app bundle, which carries its own Japanese/dev copy of the 140 `e_*` tables plus 150 baked strings, and the Japanese title logo. |
 
 Both were tested in-game on client 1.2.0 (2026-10-15). The title screen and its
 menu are English on the first launch, and DMM still starts the game normally.
@@ -37,6 +37,35 @@ the stock one. Size doesn't matter for this bundle.
   them at runtime.
 - Anything else stays Japanese and is listed in `untranslated.json`: add it to
   `ui-prefab.json` and rebuild.
+
+## Textures
+
+`translations/en/textures/<name>.png` holds the English version of each game
+texture (`Texture2D`) that has Japanese lettering. 138 are covered today: gacha and event
+logos, banners, home-screen buttons, badges and adventurer titles, stamps,
+enhancement-quest cards, subscription art, and the captions of the *Lose tips* /
+*How to play* screenshots. Each was rebuilt from the original: the Japanese
+lettering was removed and the background reconstructed (LaMa inpainting), then the
+English was lettered on top in the game's own fonts and styles (gradient fill,
+outlines, glow), so it matches the art direction. The 32 *How to play*
+screenshots whose only Japanese is small UI text inside the screenshot are left
+as they are.
+
+- `textures.py` re-encodes every `Texture2D` with that name, keeping its format
+  (DXT1/DXT5/RGBA32), size and mip count (`Texture2D.set_image`; the DXT encoder is
+  `etcpak`, a UnityPy dependency). The data size stays the same, and every other
+  object in the bundle is untouched.
+- `build_prefab_patch.py` writes them in the same pass as the text: 137 textures in
+  113 cached bundles, 3 of which also carry prefab text and get one file with both.
+  Each manifest entry lists its `textures`. The installer and `Publish-PcPatch.ps1`
+  are unchanged: a texture bundle is md5-gated and backed up like any other.
+- `build_inapp.py` writes `TitleLogo_01`, which only exists in the in-app bundle,
+  before the CRC is forged back.
+- None of the textures sits in a CRC-checked bundle.
+- To fix or add one, replace or drop a PNG named after the texture, at the game's
+  size, and rebuild. Pass `--textures ""` to either script for a text-only build.
+
+Tested in-game on client 1.2.0 (2026-10-16), with the same builds byte for byte.
 
 ## Build (maintainer, after each game update)
 
@@ -71,7 +100,7 @@ Install-EnPatch.ps1 -Prefabs       # one half on its own
 Install-EnPatch.ps1 -Restore
 ```
 
-- `-Prefabs` downloads `prefab-patch.zip` (~40 MB: the bundles are already compressed),
+- `-Prefabs` downloads `prefab-patch.zip` (~55 MB: the bundles are already compressed),
   unpacks it to `%LOCALAPPDATA%\MT-EN-Applier\pc\prefab-patch` and installs it with
   `tools\pc\Install-PrefabPatch.ps1` (md5-gated per bundle, originals backed up).
 - `-FirstLoad` downloads the in-app bundle, writes the metadata
