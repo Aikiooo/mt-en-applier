@@ -85,8 +85,9 @@ Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game upd
 
 ## Languages
 
-English is the only published language today; a **Spanish** translation is in
-progress. The translation lives in [`translations/`](translations/) as readable,
+English is the only published language today. A **French** translation is complete
+and ready to publish (PC: `Publish-Locale.ps1 -Locale fr -BuildPcPatch`); a
+**Spanish** one is in progress. The translation lives in [`translations/`](translations/) as readable,
 one-line-per-entry files, so anyone can suggest a fix or translate into another
 language with a normal pull request. [`translations/README.md`](translations/README.md)
 explains how.

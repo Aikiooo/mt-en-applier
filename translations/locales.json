@@ -2,6 +2,7 @@
   "default": "en",
   "locales": {
     "en": { "name": "English" },
-    "es": { "name": "Español" }
+    "es": { "name": "Español" },
+    "fr": { "name": "Français" }
   }
 }
