@@ -60,6 +60,7 @@ $repoRoot = (Resolve-Path (Join-Path $here '..\..\..')).Path
 $ghRepo = $Repo
 $ghRelease = $Release
 Import-Module (Join-Path $here '..\MT.EnPatch.psm1') -Force
+. (Join-Path $here 'PrefabZips.ps1')
 
 if (-not $InappBuild) { $InappBuild = Join-Path $repoRoot 'build\inapp_assets_all_en.bundle' }
 if (-not $PrefabDir)  { $PrefabDir  = Join-Path $repoRoot 'build\prefab-patch' }
@@ -149,66 +150,9 @@ if (Test-Path -LiteralPath $manifestPath) {
         Write-Host "verified $($manifest.Count) source bundles against the local cache"
     }
 
-    if (Test-Path -LiteralPath $prefabZip) { Remove-Item -LiteralPath $prefabZip -Force }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-    # Two zips: everything that carries text (the mandatory half) and the bundles
-    # that carry nothing but images. The installer downloads the second one only
-    # after asking, so a player who says no never fetches the art.
-    $isImageOnly = { param($e) (Get-Prop $e 'textures') -and -not (Get-Prop $e 'changed') }
-    $textEntries  = @($manifest | Where-Object { -not (& $isImageOnly $_) })
-    $imageEntries = @($manifest | Where-Object { & $isImageOnly $_ })
-
-    $stageRoot = Join-Path $OutDir 'prefab-root'
-    $imageStage = Join-Path $OutDir 'image-root'
-    foreach ($d in @($stageRoot, $imageStage)) {
-        if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
-        New-Item -ItemType Directory -Force -Path $d | Out-Null
-    }
-    function Copy-Entries($entries, $dest) {
-        foreach ($e in $entries) {
-            $rel = $e.rel -replace '/', '\'
-            $src = Join-Path $PrefabDir $rel
-            $dst = Join-Path $dest $rel
-            New-Item -ItemType Directory -Force -Path (Split-Path $dst -Parent) | Out-Null
-            Copy-Item -LiteralPath $src -Destination $dst -Force
-        }
-    }
-    Copy-Entries $textEntries $stageRoot
-    Copy-Entries $imageEntries $imageStage
-    # The text manifest, plus the image manifest for -Check (it cannot ask the
-    # release what is installed without downloading the image zip).
-    $textEntries | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stageRoot 'manifest.json') -Encoding UTF8
-    $imageEntries | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stageRoot 'manifest-images.json') -Encoding UTF8
-    $imageEntries | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $imageStage 'manifest.json') -Encoding UTF8
-
-    # No compression: the bundles are already LZ4HC. Packer ordering is not
-    # stable, which is why the md5 is recorded per publish.
-    [IO.Compression.ZipFile]::CreateFromDirectory($stageRoot, $prefabZip,
-        [IO.Compression.CompressionLevel]::NoCompression, $false)
-    $pcBlock.prefab_patch = [ordered]@{
-        file   = $PrefabZipName
-        size   = (Get-Item $prefabZip).Length
-        md5    = Get-Md5 $prefabZip
-        bundles = $textEntries.Count
-        hash   = $LangBundleHash      # the game build it was built for
-    }
-    Write-Host "staged $PrefabZipName : $($textEntries.Count) bundles, $([math]::Round((Get-Item $prefabZip).Length / 1MB, 1)) MB"
-
-    if ($imageEntries.Count) {
-        $imageZip = Join-Path $OutDir $PrefabImagesZipName
-        if (Test-Path -LiteralPath $imageZip) { Remove-Item -LiteralPath $imageZip -Force }
-        [IO.Compression.ZipFile]::CreateFromDirectory($imageStage, $imageZip,
-            [IO.Compression.CompressionLevel]::NoCompression, $false)
-        $pcBlock.prefab_images = [ordered]@{
-            file    = $PrefabImagesZipName
-            size    = (Get-Item $imageZip).Length
-            md5     = Get-Md5 $imageZip
-            bundles = $imageEntries.Count
-            hash    = $LangBundleHash
-        }
-        Write-Host "staged $PrefabImagesZipName : $($imageEntries.Count) bundles, $([math]::Round((Get-Item $imageZip).Length / 1MB, 1)) MB"
-    }
+    $zips = New-PrefabZips -PrefabDir $PrefabDir -OutDir $OutDir -TextZipName $PrefabZipName `
+                           -ImageZipName $PrefabImagesZipName -Hash $LangBundleHash
+    foreach ($k in $zips.Keys) { $pcBlock[$k] = $zips[$k] }
 } else {
     Write-Host "no prefab build at $PrefabDir (build it with tools\prefab-patch\build_prefab_patch.py) - publishing without it"
 }

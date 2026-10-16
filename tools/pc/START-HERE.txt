@@ -69,7 +69,8 @@ anything about PowerShell or command lines. Just follow the 3 steps.
 
   If you answered yes above, start the game with Play-in-English.cmd
   from now on (see STEP 3) - that is what swaps the English in-app
-  file in before the game reads it.
+  file in before the game reads it. (Picked another language? Its
+  file is named after it: Play-in-French.cmd, and so on.)
 
   The patch is already in the game's cache, so it stays applied
   until the game updates. If English disappears (game update or a
@@ -81,7 +82,7 @@ anything about PowerShell or command lines. Just follow the 3 steps.
   From now on, launch the game like this instead of clicking PLAY
   first:
 
-      double-click Play-in-English.cmd
+      double-click Play-in-English.cmd   (or Play-in-French.cmd, ...)
 
   It lives in %LOCALAPPDATA%\MT-EN-Applier\pc - paste that into the
   Explorer address bar to get there. It swaps the English in-app

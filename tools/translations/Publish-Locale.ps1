@@ -42,6 +42,13 @@
   powershell -File tools\translations\Publish-Locale.ps1 -Locale fr -BuildPcPatch -Publish
 
 .EXAMPLE
+  # the whole PC patch: language bundle, UI prefabs + images, in-app title screen
+  # (built with build_prefab_patch.py / build_inapp.py from this locale's cache,
+  # translations/fr/prefab/ui-prefab.json and translations/fr/textures/)
+  powershell -File tools\translations\Publish-Locale.ps1 -Locale fr -BuildPcPatch `
+      -PcPrefabDir build\prefab-patch-fr -PcInappBuild build\inapp_assets_all_fr.bundle -Publish
+
+.EXAMPLE
   # build the bundle with AutoPatcher (grown, NOT exact-size: test on a phone first)
   powershell -File tools\translations\Publish-Locale.ps1 -Locale es -BuildPatch -Stock D:\stock\__data_v13_android -KeysJson D:\keys\masterdata_keys.json
 
@@ -63,6 +70,15 @@ param(
     [switch]$BuildPcPatch,
     # global-metadata.dat of the PC client, when the game isn't installed here.
     [string]$PcMetadata,
+    # This locale's UI prefab tree (manifest.json + <name>\<hash>\__data), from
+    # tools/prefab-patch/build_prefab_patch.py run with this locale's cache,
+    # prefab map and textures. Published as prefab-patch-<locale>.zip and
+    # prefab-images-<locale>.zip; the PC installer offers them like English's.
+    [string]$PcPrefabDir,
+    # This locale's in-app bundle (tools/prefab-patch/build_inapp.py), with the
+    # .json build_inapp.py writes beside it. Published as
+    # inapp_assets_all_<locale>.bundle for the installer's title-screen swap.
+    [string]$PcInappBuild,
     # Build __data.<locale> with AutoPatchMain (needs -Stock and -KeysJson).
     [switch]$BuildPatch,
     # The Android-target stock bundle the patch is (or gets) built from. Its md5
@@ -150,6 +166,8 @@ if ($Unpublish) {
 
     $block = [ordered]@{
         name      = $entry.name
+        # English name, ASCII: the PC installer names Play-in-<label>.cmd after it.
+        label     = $(if ($entry.PSObject.Properties['label']) { $entry.label } else { $Locale })
         cache     = $cacheName
         cache_md5 = Get-Md5 $cachePath
         built_at  = (Get-Date).ToString('s')
@@ -248,6 +266,52 @@ if ($Unpublish) {
         $upload += $pcPath
     }
 
+    # --- 2c. optional PC asset builds (UI prefabs + images, in-app) -----------
+    if (($PcPrefabDir -or $PcInappBuild) -and -not $block.Contains('pc')) {
+        Fail "-PcPrefabDir / -PcInappBuild need the PC language bundle too (-BuildPcPatch or -PcPatchFile)"
+    }
+    if ($PcPrefabDir) {
+        if (-not (Test-Path -LiteralPath (Join-Path $PcPrefabDir 'manifest.json'))) { Fail "no manifest.json in $PcPrefabDir" }
+        . (Join-Path $repoRoot 'tools\pc\maintainer\PrefabZips.ps1')
+        $zips = New-PrefabZips -PrefabDir $PcPrefabDir -OutDir $OutDir -TextZipName "prefab-patch-$Locale.zip" `
+                               -ImageZipName "prefab-images-$Locale.zip" -Hash $version.pc.language_ja_en.hash
+        foreach ($k in $zips.Keys) {
+            $block.pc[$k] = $zips[$k]
+            $upload += (Join-Path $OutDir $zips[$k].file)
+        }
+        # The text bundles must be built from the same stock files as English's,
+        # or the installer skips them all as "changed by a game update".
+        $enPrefab = $version.pc.PSObject.Properties['prefab_patch']
+        if ($enPrefab -and [int]$zips.prefab_patch.bundles -lt [int]$enPrefab.Value.bundles) {
+            Write-Host "NOTE: $($zips.prefab_patch.bundles) text bundles, English has $($enPrefab.Value.bundles): check the prefab map covers every string."
+        }
+    }
+    if ($PcInappBuild) {
+        $inappJson = "$PcInappBuild.json"
+        foreach ($f in @($PcInappBuild, $inappJson)) { if (-not (Test-Path -LiteralPath $f)) { Fail "missing in-app build: $f" } }
+        $meta = Get-Content -LiteralPath $inappJson -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $meta.stock_md5) { Fail "$inappJson has no stock_md5; rebuild with build_inapp.py" }
+        $enInapp = $version.pc.PSObject.Properties['inapp_assets_all_en']
+        if ($enInapp -and $meta.stock_md5 -ne $enInapp.Value.stock_md5 -and -not $Force) {
+            Fail "in-app build targets stock $($meta.stock_md5), the release targets $($enInapp.Value.stock_md5): built for another game build (-Force overrides)"
+        }
+        $inappName = "inapp_assets_all_$Locale.bundle"
+        $inappPath = Join-Path $OutDir $inappName
+        Copy-Item -LiteralPath $PcInappBuild -Destination $inappPath -Force
+        $inappMd5 = Get-Md5 $inappPath
+        if ($meta.md5 -and $meta.md5 -ne $inappMd5) { Fail "$PcInappBuild does not match the md5 in its .json" }
+        $block.pc.inapp = [ordered]@{
+            file       = $inappName
+            size       = (Get-Item -LiteralPath $inappPath).Length
+            md5        = $inappMd5
+            stock_md5  = $meta.stock_md5
+            stock_size = $meta.stock_size
+            crc        = $meta.crc
+            hash       = $version.pc.language_ja_en.hash
+        }
+        $upload += $inappPath
+    }
+
     # --- 3. merge into version.json ---------------------------------------------
     if (-not $version.locales) {
         $version | Add-Member -NotePropertyName locales -NotePropertyValue ([pscustomobject]@{}) -Force
@@ -267,7 +331,13 @@ if ($version.locales) {
     Write-Host 'published languages after this run:'
     foreach ($p in $version.locales.PSObject.Properties) {
         $mode = if ($p.Value.PSObject.Properties['patch']) { 'Download + Auto-patch' } else { 'Auto-patch only' }
-        if ($p.Value.PSObject.Properties['pc']) { $mode += ' + PC' }
+        if ($p.Value.PSObject.Properties['pc']) {
+            # This run's block is a dictionary; the others come from version.json.
+            $pcv = $p.Value.pc
+            $keys = if ($pcv -is [System.Collections.IDictionary]) { $pcv.Keys } else { $pcv.PSObject.Properties.Name }
+            $parts = @($keys | Where-Object { $_ -ne 'language' })
+            $mode += ' + PC' + $(if ($parts) { " ($($parts -join ', '))" } else { '' })
+        }
         Write-Host "  $($p.Name)  $($p.Value.name)  ($mode)"
     }
 }

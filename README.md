@@ -73,7 +73,8 @@ Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game upd
   `-WithAssets` answers yes up front, `-NoImages` and `-LanguageOnly` say no.
   Because the in-app half can't stay installed (DMM verifies that file before
   launching), a small watcher swaps it in per session: start the game with
-  `Play-in-English.cmd`, then click Play.
+  `Play-in-English.cmd` (`Play-in-French.cmd`, ... in another language), then click Play.
+  Every published language ships all of it, not only its text.
   **[`tools/pc/README.md`](tools/pc/README.md)** has the details.
 - **No terminal?** Download the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases/tag/pc-v1),
   extract it and double-click `Install-EnPatch.bat`. `START-HERE.txt` inside is the
@@ -86,7 +87,8 @@ Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game upd
 ## Languages
 
 English is the only published language today. A **French** translation is complete
-and ready to publish (PC: `Publish-Locale.ps1 -Locale fr -BuildPcPatch`); a
+and ready to publish (PC, everything English has: `Publish-Locale.ps1 -Locale fr -BuildPcPatch
+-PcPrefabDir … -PcInappBuild …`); a
 **Spanish** one is in progress. The translation lives in [`translations/`](translations/) as readable,
 one-line-per-entry files, so anyone can suggest a fix or translate into another
 language with a normal pull request. [`translations/README.md`](translations/README.md)

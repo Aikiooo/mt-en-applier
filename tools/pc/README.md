@@ -46,14 +46,14 @@ image bundles + 61 MB in-app + the language bundle), and because the in-app half
 cannot stay installed — DMM verifies that file before it starts the game, so a
 small watcher swaps it in as the game starts and puts the stock file back on
 exit. The installer starts that watcher for the current session and writes
-**`Play-in-English.cmd`** (`%LOCALAPPDATA%\MT-EN-Applier\pc`) — use it for later
-sessions, then click Play.
+**`Play-in-English.cmd`** (`Play-in-French.cmd`, ... for another language;
+`%LOCALAPPDATA%\MT-EN-Applier\pc`) — use it for later sessions, then click Play.
 
 **Or use the ready-to-use zip** (no command line at all):
 
 1. **Download** the zip from the [PC English Patch release](https://github.com/Aikiooo/mt-en-applier/releases) and extract it anywhere.
 2. Double-click **`Install-EnPatch.bat`** — once. It asks one question (full English UI text? default yes, 60 s), then does everything.
-3. Click **Play** in DMM GAME PLAYER and play in English. The language bundle stays patched in the game's cache until the game updates; if the in-app half was installed, start the game with `Play-in-English.cmd` instead.
+3. Click **Play** in DMM GAME PLAYER and play in English. The language bundle stays patched in the game's cache until the game updates; if the in-app half was installed, start the game with `Play-in-English.cmd` (or `Play-in-<Language>.cmd`) instead.
 
 Open **`START-HERE.txt`** in the zip — it's the whole guide in plain language.
 (Or read the same guide in your browser: https://www.mtcoe.com/#/en-patch.)
@@ -81,7 +81,7 @@ Three rules make this work (learned the hard way):
 
 1. **Leave the Addressables catalog pristine.** The game validates the bundles it *downloads* against the catalog's pinned `m_BundleSize` and `m_Crc` (a CRC32 of the *decompressed* stream) — editing the catalog, or feeding a bundle whose size/CRC doesn't match, is exactly what produces the **"Failed to acquire resources"** error. That is why the language bundle is rebuilt to the stock byte size with a forged CRC. The UI prefabs are a different case: their catalog entries carry `m_UseCrcForCachedBundles: false`, so the cached copies are not verified, and 243 transformed bundles can be dropped in as-is (the builder skips the 76 entries that *are* verified, and says so in `crc-checked.json`).
 2. **The language bundle and the prefabs live in the cache, not in the game files.** The installer seeds them into the Unity Addressables cache (`…\LocalLow\Unity\GREE Entertainment_クロエコ\…\__data`), which DMM's per-launch file verification does not touch — so they stay applied until the game itself refreshes that cache (a title update). If DMM ever repairs or the game updates, just re-run `Install-EnPatch.bat`.
-3. **The in-app bundle cannot stay.** DMM verifies `inapp_assets_all.bundle` before it starts the game, so the English build is staged next to the game folder (`<game>\..\mt-en-staging`, same drive) and swapped in for the session by `Watch-InappSwap.ps1`. Run the watcher before each session (`Play-in-English.cmd`).
+3. **The in-app bundle cannot stay.** DMM verifies `inapp_assets_all.bundle` before it starts the game, so the English build is staged next to the game folder (`<game>\..\mt-en-staging`, same drive) and swapped in for the session by `Watch-InappSwap.ps1`. Run the watcher before each session (`Play-in-<Language>.cmd`).
 
 ## Requirements
 
@@ -100,7 +100,8 @@ Three rules make this work (learned the hard way):
 
 Add `-Prefabs`, `-FirstLoad` or `-WithAssets` (both) to also rewrite the text the
 game ships itself; see the top of this file. With `-FirstLoad` the installer also
-writes `Play-in-English.cmd`, which is what you start the game with afterwards.
+writes `Play-in-<Language>.cmd` (`Play-in-English.cmd`, `Play-in-French.cmd`, ...),
+which is what you start the game with afterwards.
 
 It refuses to install when the game's newest language-pack folder isn't the one the
 patch targets (the game hasn't been launched since an update, or the patch for a new
@@ -116,10 +117,21 @@ remembers the answer, so re-running after a game update is just Enter (60 second
 silence keeps the default too). Skip the menu with `-Language fr`
 (or `& ([scriptblock]::Create((irm …/install.ps1))) -Language fr`).
 
-The UI prefabs, images and in-app title screen are English builds, so another
-language installs its language bundle only. Maintainers build that bundle from the
-released English one with `tools/translations/Publish-Locale.ps1 -Locale fr -BuildPcPatch`
-(`tools/prefab-patch/build_locale_bundle.py`: exact stock size, CRC forged).
+Each language installs everything English does: its language bundle, its UI
+prefabs and images, and its in-app title screen with `Play-in-<Language>.cmd`
+(`Play-in-French.cmd`). A part a language has not published yet is skipped, and
+nothing another language left behind stays: switching languages first puts the
+original UI prefabs back, and removes the other language's launcher.
+
+Maintainers publish all of it with `tools/translations/Publish-Locale.ps1`:
+`-BuildPcPatch` builds the language bundle from the released English one
+(`tools/prefab-patch/build_locale_bundle.py`: exact stock size, CRC forged),
+`-PcPrefabDir` takes the `build_prefab_patch.py` tree built with that language's
+cache, `translations/<code>/prefab/ui-prefab.json` and
+`translations/<code>/textures/` (zipped as `prefab-patch-<code>.zip` and
+`prefab-images-<code>.zip`), and `-PcInappBuild` takes its `build_inapp.py` bundle
+(published as `inapp_assets_all_<code>.bundle`). See
+[`translations/README.md`](../../translations/README.md#publishing-a-language-to-the-app).
 
 ## Play
 
