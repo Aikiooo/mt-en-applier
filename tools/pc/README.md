@@ -110,10 +110,16 @@ overrides.
 ### Other languages
 
 Only languages published for the current game build are offered. With just English
-there's no question; with more, the installer shows a short menu (default: your last
-choice, else your Windows display language, else English) and remembers the answer,
-so re-running after a game update doesn't ask again. Skip the menu with `-Language es`
-(or `& ([scriptblock]::Create((irm …/install.ps1))) -Language es`).
+there's no question; with more, the installer shows a short menu on every run
+(default: your last choice, else your Windows display language, else English) and
+remembers the answer, so re-running after a game update is just Enter (60 seconds of
+silence keeps the default too). Skip the menu with `-Language fr`
+(or `& ([scriptblock]::Create((irm …/install.ps1))) -Language fr`).
+
+The UI prefabs, images and in-app title screen are English builds, so another
+language installs its language bundle only. Maintainers build that bundle from the
+released English one with `tools/translations/Publish-Locale.ps1 -Locale fr -BuildPcPatch`
+(`tools/prefab-patch/build_locale_bundle.py`: exact stock size, CRC forged).
 
 ## Play
 

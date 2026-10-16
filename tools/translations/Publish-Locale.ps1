@@ -38,6 +38,10 @@
   powershell -File tools\translations\Publish-Locale.ps1 -Locale es -PcPatchFile D:\out\language-ja_es.bundle -Publish
 
 .EXAMPLE
+  # build the PC bundle from the released English one (tools/prefab-patch/build_locale_bundle.py)
+  powershell -File tools\translations\Publish-Locale.ps1 -Locale fr -BuildPcPatch -Publish
+
+.EXAMPLE
   # build the bundle with AutoPatcher (grown, NOT exact-size: test on a phone first)
   powershell -File tools\translations\Publish-Locale.ps1 -Locale es -BuildPatch -Stock D:\stock\__data_v13_android -KeysJson D:\keys\masterdata_keys.json
 
@@ -52,6 +56,13 @@ param(
     # A ready-made PC (DMM) language bundle for this locale: exact stock size +
     # forged CRC like the English one, built for the release's current PC game build.
     [string]$PcPatchFile,
+    # Build that PC bundle here instead: the released English bundle with this
+    # locale's tables, exact-size and CRC-forged (needs Python with
+    # tools/prefab-patch/requirements.txt, and the PC game installed for the
+    # master key, or -PcMetadata).
+    [switch]$BuildPcPatch,
+    # global-metadata.dat of the PC client, when the game isn't installed here.
+    [string]$PcMetadata,
     # Build __data.<locale> with AutoPatchMain (needs -Stock and -KeysJson).
     [switch]$BuildPatch,
     # The Android-target stock bundle the patch is (or gets) built from. Its md5
@@ -96,6 +107,7 @@ if ($Locale -eq $default) { Fail "'$default' is the default language; it ships t
 # The app rejects anything else (codes become file names on the phone).
 if ($Locale -notmatch '^[A-Za-z0-9_-]{1,16}$') { Fail "locale code '$Locale' must match [A-Za-z0-9_-]{1,16}" }
 if ($PatchFile -and $BuildPatch) { Fail "use -PatchFile or -BuildPatch, not both" }
+if ($PcPatchFile -and $BuildPcPatch) { Fail "use -PcPatchFile or -BuildPcPatch, not both" }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $versionPath = Join-Path $OutDir 'version.json'
@@ -200,6 +212,25 @@ if ($Unpublish) {
     }
 
     # --- 2b. optional PC bundle (read by tools/pc/Install-EnPatch.ps1) ---------
+    if ($BuildPcPatch) {
+        $en = $version.pc.language_ja_en
+        $enBundle = Join-Path $OutDir 'language-ja_en.bundle'
+        if (-not (Test-Path -LiteralPath $enBundle) -or (Get-Md5 $enBundle) -ne $en.md5) {
+            Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/language-ja_en.bundle" -OutFile $enBundle
+        }
+        if ((Get-Md5 $enBundle) -ne $en.md5) { Fail "language-ja_en.bundle on the release doesn't match version.json's md5" }
+        $enCache = Join-Path $OutDir 'translation_cache.en.json'
+        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Build-TranslationCache.ps1') `
+            -Locale $default -Out $enCache
+        if ($LASTEXITCODE -ne 0) { Fail "cache build failed for '$default'" }
+        $PcPatchFile = Join-Path $OutDir "built-language-ja_$Locale.bundle"
+        $pyArgs = @('-X', 'utf8', (Join-Path $repoRoot 'tools\prefab-patch\build_locale_bundle.py'),
+                    '--language-bundle', $enBundle, '--en-cache', $enCache, '--locale-cache', $cachePath,
+                    '--out', $PcPatchFile)
+        if ($PcMetadata) { $pyArgs += @('--metadata', $PcMetadata) }
+        & python @pyArgs
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $PcPatchFile)) { Fail "build_locale_bundle.py failed" }
+    }
     if ($PcPatchFile) {
         if (-not (Test-Path -LiteralPath $PcPatchFile)) { Fail "missing PC patch: $PcPatchFile" }
         $en = $version.pc.language_ja_en

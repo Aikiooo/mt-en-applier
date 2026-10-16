@@ -33,9 +33,10 @@
   -LanguageOnly refuses everything but the language bundle.
 
   Languages: only the ones published for the current game build are offered.
-  With one (English) there is no menu; with several, a short menu appears
-  (default: last choice, else the Windows display language, else English) and
-  the choice is remembered for the next run. -Language skips the menu.
+  With one (English) there is no menu; with several, a short menu appears on
+  every run (default: last choice, else the Windows display language, else
+  English; Enter or 60 seconds of silence keeps the default) and the choice is
+  remembered for the next run. -Language skips the menu.
 
   Run this once. After that, just click Play in DMM GAME PLAYER (through
   Play-in-English.cmd per session if the in-app half is installed).
@@ -115,6 +116,41 @@ function Read-YesNo([string]$Question, [int]$TimeoutSec, [bool]$Default) {
     Write-Host ''
     Write-Host "  no answer in $TimeoutSec s -> yes"
     return $Default
+}
+
+# Pick one of several items with a digit key; Enter or $TimeoutSec of silence
+# keeps the default. Same never-block rule as Read-YesNo.
+function Read-Choice([string]$Question, [string[]]$Items, [int]$DefaultIndex, [int]$TimeoutSec) {
+    Write-Host ''
+    Write-Host "  $Question"
+    for ($i = 0; $i -lt $Items.Count; $i++) {
+        $mark = if ($i -eq $DefaultIndex) { '  (default)' } else { '' }
+        Write-Host ("    {0}) {1}{2}" -f ($i + 1), $Items[$i], $mark)
+    }
+    try {
+        $deadline = (Get-Date).AddSeconds($TimeoutSec)
+        while ((Get-Date) -lt $deadline) {
+            $left = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+            Write-Host ("`r    choose 1-{0}, Enter = {1}   ... {2} s   " -f $Items.Count, ($DefaultIndex + 1), $left) -NoNewline
+            if ([Console]::KeyAvailable) {
+                $k = [Console]::ReadKey($true)
+                if ($k.Key -eq 'Enter') { Write-Host ''; return $DefaultIndex }
+                $n = 0
+                if ([int]::TryParse([string]$k.KeyChar, [ref]$n) -and $n -ge 1 -and $n -le $Items.Count) {
+                    Write-Host ''
+                    return $n - 1
+                }
+            }
+            Start-Sleep -Milliseconds 200
+        }
+    } catch {
+        Write-Host ''
+        Write-Host "  (could not read the console: $($_.Exception.Message))"
+        return $DefaultIndex
+    }
+    Write-Host ''
+    Write-Host "  no answer in $TimeoutSec s -> $($Items[$DefaultIndex])"
+    return $DefaultIndex
 }
 
 $prefabDir = Join-Path $PatchDataDir 'prefab-patch'
@@ -343,15 +379,14 @@ if ($Language) {
     $canAsk = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
     if ($Check) {
         Write-Host "languages    : $(($langs | ForEach-Object { $_.Name }) -join ', ') (would default to $($default.Name))"
-    } elseif ($savedCode -and $default.Code -eq $savedCode) {
-        Write-Host "language : $($chosen.Name) (from last time; pass -Language <code> to change)"
     } elseif ($canAsk) {
-        Write-Host ''
-        Write-Host 'Patch language:'
-        for ($i = 0; $i -lt $langs.Count; $i++) { Write-Host ("  {0}) {1}" -f ($i + 1), $langs[$i].Name) }
-        $defIdx = [array]::IndexOf(@($langs | ForEach-Object { $_.Code }), $default.Code) + 1
-        $ans = Read-Host "Choose [$defIdx]"
-        if ($ans -match '^\d+$' -and [int]$ans -ge 1 -and [int]$ans -le $langs.Count) { $chosen = $langs[[int]$ans - 1] }
+        # Asked on every interactive run, so a language published after the first
+        # install (or a change of mind) is one keypress away; the default is the
+        # last choice, so re-running after a game update is still just Enter.
+        $defIdx = [array]::IndexOf(@($langs | ForEach-Object { $_.Code }), $default.Code)
+        $pick = Read-Choice "Patch language ($($from): $($default.Name))" @($langs | ForEach-Object { $_.Name }) $defIdx 60
+        $chosen = $langs[$pick]
+        Write-Host "language : $($chosen.Name)"
     } else {
         Write-Host "language : $($chosen.Name) ($from)"
     }
