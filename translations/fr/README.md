@@ -1,14 +1,16 @@
 # Traduction française (`fr`)
 
-Ce dossier contient la traduction française. Comme l'espagnol, elle est **éparse** :
-on n'y met que les lignes traduites, tout le reste retombe sur l'anglais de
-[`../en/`](../en/) dans le patch construit. Elle peut donc arriver thème par thème.
+Ce dossier contient la traduction française. Les sept fichiers de `source/` et les
+deux tables `hand/` couvrent **tout** l'anglais (23 853 entrées) : rien ne retombe sur
+l'anglais. Le format reste éparse par construction — un thème peut arriver seul,
+l'anglais comble les trous, comme le montre [`../es/`](../es/) — mais ici tous les
+thèmes sont là.
 
 Le fonctionnement (clés japonaises, une entrée par ligne, tables `hand/` indexées par
 id) est le même que pour l'espagnol : voir [`../es/README.md`](../es/README.md).
 
 ```powershell
-# construit le cache français (l'anglais comble les trous) et affiche la couverture
+# construit le cache français et affiche la couverture
 powershell -File tools\translations\Build-TranslationCache.ps1 -Locale fr
 ```
 
@@ -20,12 +22,17 @@ powershell -File tools\translations\Build-TranslationCache.ps1 -Locale fr
 | `source/ui-system.json`, `missions-rewards.json`, `character-equip.json` | traduit |
 | `source/battle.json`, `gacha-shop.json`, `story-quest.json` | traduit |
 | `source/dialogue.json` | traduit |
+| `prefab/ui-prefab.json` (les 376 chaînes de l'interface PC) | traduit |
+| `textures/` (138 images) | redessiné |
 
 ## Méthode
 
 On traduit **depuis le japonais**, l'anglais sert de référence (et de garde-fou pour
-les termes déjà fixés). Le patch PC (`en/prefab/`) et les images (`en/textures/`)
-ne sont pas encore localisés.
+les termes déjà fixés). Le patch PC est localisé aussi : `prefab/ui-prefab.json` et
+`textures/` sont les équivalents français de `en/prefab/` et `en/textures/`. Ils ne
+passent pas par le cache — ils sont cuits dans les bundles de l'interface par
+`tools/prefab-patch/build_prefab_patch.py` et `build_inapp.py`, avec le cache
+français et `prefab/ui-prefab.json`.
 
 ## Caractères
 
@@ -48,6 +55,12 @@ mais **pas** :
   déborde, ses lignes les plus longues repassent en japonais. Le français est plus long
   que l'anglais : rester naturel mais concis.
 - **Heures** : `18h00`, `{0}h00`.
+- **Formats de date** (`yyyy/MM/dd HH:mmまで`, `開催期間：yyyy/MM/dd HH:mmまで`) : ce ne
+  sont pas du texte, le jeu les passe à `DateTime.ToString`, où toute lettre non citée
+  est un spécificateur. Entourer le texte littéral d'apostrophes et échapper
+  l'apostrophe : `'Jusqu\'au' dd/MM/yyyy HH:mm`. Une apostrophe seule fait échouer
+  `DateTime.ToString` et l'écran ne finit jamais de charger (le Tirage). Le build
+  refuse désormais un format que `DateTime.ToString` rejette.
 
 ## Glossaire
 

@@ -21,12 +21,16 @@ folder:
 `en/prefab/` and `en/textures/` are PC-only: text and images baked into the game's
 UI bundles, used by [`tools/prefab-patch`](../tools/prefab-patch/README.md), not by
 the translation cache. `en/textures/<name>.png` is the English version of the game
-texture with that name.
+texture with that name. A locale published on PC carries its own
+`prefab/ui-prefab.json` and `textures/` the same way ([`fr/`](fr/README.md) does);
+they are built from that locale's cache and shipped as its `prefab_patch` and
+`prefab_images`.
 
 English (`en`) is the **canonical** set of keys. Every other locale is **sparse**: it
 only carries the lines it translates, and anything missing falls back to English in
 the built patch. That means a new language can land one theme at a time — see
-[`es/README.md`](es/README.md) for a worked example.
+[`es/README.md`](es/README.md) for a worked example. A locale that has translated
+everything simply carries every key — [`fr/`](fr/README.md) does.
 
 ## The files (English)
 
@@ -81,6 +85,12 @@ Add a folder for the locale (and list it in `locales.json`), then mirror the Eng
 files under `source/` and `hand/`, keeping the Japanese keys/ids and putting your
 language on the right. Partial files are fine. [`es/README.md`](es/README.md) has the
 details.
+
+To have the locale published on PC as well — its own UI text, images and title
+screen, not just its translated text — give it `prefab/ui-prefab.json` and
+`textures/`, laid out like [`fr/prefab/ui-prefab.json`](fr/prefab/ui-prefab.json)
+and [`fr/textures/`](fr/textures/) do. The maintainer section below builds and
+publishes them.
 
 ## For maintainers
 
