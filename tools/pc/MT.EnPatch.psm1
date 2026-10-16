@@ -19,6 +19,7 @@ $script:LangFileName  = 'language-ja_en.bundle'      # exact-size, CRC-forged la
 $script:InappFileName = 'inapp_assets_all_en.bundle'  # EN inapp asset patch (StreamingAssets, swapped per session)
 $script:InappMetaName = 'inapp_assets_all_en.bundle.json'  # stock_md5/md5 the swap watcher verifies
 $script:PrefabZipName = 'prefab-patch.zip'             # the English UI-prefab bundles, one zip per game build
+$script:PrefabImagesZipName = 'prefab-images.zip'      # the image-only bundles, downloaded only if the player wants them
 $script:VersionFile   = 'version.json'
 
 $script:GameProcessName = 'mushoku_coe_cl'
@@ -188,7 +189,7 @@ function Get-PcLanguages {
 
 # Download one file from the release, resuming a partial download when there is
 # one. curl.exe ships with Windows 10 1803+ and is the only resumable option in
-# Windows PowerShell 5.1 - the in-app bundle is 61 MB and the prefab zip 63 MB,
+# Windows PowerShell 5.1 - the in-app bundle is 61 MB and the prefab zips 41+23 MB,
 # so a dropped connection must not restart them. Invoke-WebRequest is the
 # fallback (no resume, and 5.1 throttles it badly unless progress is silenced).
 function Get-RemoteFile {
@@ -293,6 +294,6 @@ function Install-LanguageCache {
 }
 
 Export-ModuleMember -Function Get-Md5, Get-RemoteFile, Get-Prop, Get-UnityCachePublisherDir, Get-LangCacheDir, Get-LangBundleHash, Get-GameDir, Get-GameDirFromDmmConfig, Get-ReleaseInfo, Get-PcLanguages, Get-PatchArtifacts, Get-VerifiedFile, Install-LanguageCache `
-                    -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, InappMetaName, PrefabZipName, VersionFile, `
+                    -Variable Repo, Release, ReleaseBase, LangFileName, InappFileName, InappMetaName, PrefabZipName, PrefabImagesZipName, VersionFile, `
                               GameProcessName, GameExeName, InappRelPath, BootCfgRelPath, `
                               LangBundleGuid, LangBundleHash, LangBundleSize, PatchDataDir

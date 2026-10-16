@@ -14,11 +14,11 @@
   It also rewrites the text the game ships itself, and the redrawn images that
   carry Japanese lettering. The text installs without asking - it is what this
   patch has always done. The images are a visible change to the art, so they get
-  the question, once the download is unpacked (they arrive inside the same zip,
+  the question before their download (the text bundles arrive in their own zip,
   so answering no saves no bandwidth): it defaults to yes, and sixty seconds of
   silence means yes as well.
   - -Prefabs puts the English UI-prefab bundles into the same Unity cache, next
-    to the language bundle (~63 MB download, once per game build). They carry
+    to the language bundle (~41 MB download, once per game build). They carry
     the ~7,270 strings baked into UI prefabs, including ~400 labels the game
     never overwrites at runtime, and the English versions of the images with
     Japanese lettering (logos, banners, buttons, tutorial captions).
@@ -121,6 +121,34 @@ $prefabDir = Join-Path $PatchDataDir 'prefab-patch'
 $inappCmd = Join-Path $PatchDataDir 'Play-in-English.cmd'
 $inappMeta = Join-Path $PatchDataDir $InappMetaName
 $settingsPath = Join-Path $PatchDataDir 'settings.json'
+
+# Unpack a published tree into a fresh folder and swap it in, so a failed extract
+# cannot take the previous tree (and its manifest) with it. Returns the manifest.
+function Expand-PatchZip([string]$Zip, [string]$Dest) {
+    $newDir = "$Dest.new"
+    if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
+    $ok = $false
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [IO.Compression.ZipFile]::ExtractToDirectory($Zip, $newDir)
+        $ok = $true
+    } catch {
+        Write-Host "  (ZipFile failed: $($_.Exception.Message); trying Expand-Archive)"
+    }
+    if (-not $ok) {
+        New-Item -ItemType Directory -Force -Path $newDir | Out-Null
+        Expand-Archive -LiteralPath $Zip -DestinationPath $newDir -Force
+    }
+    $manifest = @(Get-Content -LiteralPath (Join-Path $newDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json)
+    if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
+    Move-Item -LiteralPath $newDir -Destination $Dest
+    return , $manifest
+}
+
+function Plural([int]$N, [string]$Word) {
+    if ($N -eq 1) { return "1 $Word" }
+    return "$N ${Word}s"
+}
 
 # The helper scripts run from wherever they are, but Play-in-English.cmd runs
 # whatever sits next to it in PatchDataDir, so a copy has to be there too (the
@@ -355,6 +383,7 @@ if ($chosen.Code -ne 'en') {
 
 # The asset patches are built per game build; both are published under pc.
 $prefabPub = Get-Prop (Get-Prop $version 'pc') 'prefab_patch'
+$imagePub  = Get-Prop (Get-Prop $version 'pc') 'prefab_images'
 $inappPub  = Get-Prop (Get-Prop $version 'pc') 'inapp_assets_all_en'
 $gameHash  = Get-Prop (Get-Prop $version 'pc').language_ja_en 'hash'
 
@@ -388,25 +417,32 @@ if ($Check) {
             $done = 0
             $doneImages = 0
             $imageOnly = 0
-            $textBundles = 0
-            $manifestPath = Join-Path $prefabDir 'manifest.json'
             $cache = Get-UnityCachePublisherDir
+            $manifestPath = Join-Path $prefabDir 'manifest.json'
+            $imageManifestPath = Join-Path $prefabDir 'manifest-images.json'
             if (Test-Path -LiteralPath $manifestPath) {
-                $manifest = @(Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
-                foreach ($e in $manifest) {
-                    $isImageOnly = (Get-Prop $e 'textures') -and -not (Get-Prop $e 'changed')
-                    if ($isImageOnly) { $imageOnly++ } else { $textBundles++ }
+                foreach ($e in @(Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)) {
                     if (-not $cache) { continue }
                     $t = Join-Path $cache ($e.rel -replace '/', '\')
-                    if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) {
-                        $done++
-                        if ($isImageOnly) { $doneImages++ }
+                    if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) { $done++ }
+                }
+            }
+            if (Test-Path -LiteralPath $imageManifestPath) {
+                $imageManifest = @(Get-Content -LiteralPath $imageManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+                $imageOnly = $imageManifest.Count
+                if ($cache) {
+                    foreach ($e in $imageManifest) {
+                        $t = Join-Path $cache ($e.rel -replace '/', '\')
+                        if ((Test-Path -LiteralPath $t) -and ((Get-Md5 $t) -eq $e.out_md5)) { $doneImages++ }
                     }
                 }
             }
-            $state = if ($done) { "$done of $($prefabPub.bundles) bundles in place" } else { 'not installed' }
-            if ($done -and $imageOnly) { $state += " (images $doneImages of $imageOnly)" }
+            $state = if ($done) { "$done of $($prefabPub.bundles) text bundles in place" } else { 'not installed' }
             Write-Host "prefabs      : $($prefabPub.bundles) bundles, $([math]::Round([int64]$prefabPub.size / 1MB, 1)) MB - $state"
+            if ($imagePub) {
+                $imageState = if ($doneImages) { "$doneImages of $($imagePub.bundles) in place" } else { 'not installed' }
+                Write-Host "images       : $($imagePub.bundles) bundles, $([math]::Round([int64]$imagePub.size / 1MB, 1)) MB - $imageState"
+            }
         }
 
         if (-not $inappPub) {
@@ -519,51 +555,40 @@ if (-not $res.SizeOk) {
 # --- 7. prefab bundles (persistent, same cache as the language bundle) -------
 if ($usePrefabs) {
     Write-Host 'unpacking the English UI prefabs ...'
-    # Unpacked into a fresh folder and only then swapped in, so a failed extract
-    # cannot take the previous tree (and its manifest) with it.
-    $zip = $art.Files.prefab
-    $newDir = "$prefabDir.new"
-    if (Test-Path -LiteralPath $newDir) { Remove-Item -LiteralPath $newDir -Recurse -Force }
-    $extracted = $false
+    $manifest = Expand-PatchZip -Zip $art.Files.prefab -Dest $prefabDir
+    $textCount = @($manifest | Where-Object { (Get-Prop $_ 'changed') }).Count
+    Write-Host "  text bundles : $textCount (published: $($prefabPub.bundles))"
     try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [IO.Compression.ZipFile]::ExtractToDirectory($zip, $newDir)
-        $extracted = $true
-    } catch {
-        Write-Host "  (ZipFile failed: $($_.Exception.Message); trying Expand-Archive)"
-    }
-    if (-not $extracted) {
-        New-Item -ItemType Directory -Force -Path $newDir | Out-Null
-        Expand-Archive -LiteralPath $zip -DestinationPath $newDir -Force
-    }
-    $manifest = Get-Content -LiteralPath (Join-Path $newDir 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    $manifest = @($manifest)
-    if (Test-Path -LiteralPath $prefabDir) { Remove-Item -LiteralPath $prefabDir -Recurse -Force }
-    Move-Item -LiteralPath $newDir -Destination $prefabDir
-
-    # The text side installs without asking (it is what the patch always did).
-    # The redrawn images are a visible change to the art, so they get the
-    # question - after the download, because they arrive in the same zip.
-    $imageOnly = @($manifest | Where-Object { (Get-Prop $_ 'textures') -and -not (Get-Prop $_ 'changed') }).Count
-    $textOnly  = @($manifest | Where-Object { (Get-Prop $_ 'changed') }).Count
-    $withImages = -not $NoImages
-    if ($imageOnly -and -not $NoImages -and -not $WithAssets) {
-        $what = if ($imageOnly -eq 1) { '1 bundle' } else { "$imageOnly bundles" }
-        $withImages = Read-YesNo "Also install the English images? (${what}: logos, banners, badges, tutorial captions - already in the download)" 60 $true
-    }
-    Write-Host "  bundles : $(@($manifest).Count) (published: $($prefabPub.bundles)), $textOnly with text, $imageOnly with images only"
-    try {
-        $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir -SkipTextures:(-not $withImages)
+        # The text side installs without asking: it is what the patch has always
+        # done.
+        $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir $prefabDir
         if ($res -and $res.missing) { Write-Host 'Some UI bundles were not in the cache yet (see above).' }
-        if ($res -and $res.images_skipped) {
-            $n = $res.images_skipped
-            $what = if ($n -eq 1) { '1 image bundle' } else { "$n image bundles" }
-            Write-Host "$what left Japanese. Re-run with -WithAssets (or answer yes) to add them."
-        }
     } catch {
         # The language bundle is already seeded; the in-app half below is
         # independent, so a prefab failure must not take it down too.
         Write-Host "NOTE: the prefab install stopped: $($_.Exception.Message)"
+    }
+
+    # The redrawn images are a separate download, so the question comes first and
+    # a "no" never fetches them.
+    if ($imagePub) {
+        $withImages = -not $NoImages
+        if ($withImages -and -not $WithAssets) {
+            $withImages = Read-YesNo "Also install the English images? ($(Plural @($imagePub.bundles).Count 'bundle'): logos, banners, badges, tutorial captions; $([math]::Round([int64]$imagePub.size / 1MB, 1)) MB download)" 60 $true
+        }
+        if ($withImages) {
+            Write-Host "fetching the English images ($([math]::Round([int64]$imagePub.size / 1MB, 1)) MB) ..."
+            $imgZip = Get-VerifiedFile -Name (Get-Prop $imagePub 'file') -Want $imagePub -Force:$Force
+            $imgManifest = Expand-PatchZip -Zip $imgZip -Dest (Join-Path $PatchDataDir 'prefab-images')
+            try {
+                $res = & (Get-AssetScript 'Install-PrefabPatch.ps1') -PatchDir (Join-Path $PatchDataDir 'prefab-images')
+                if ($res -and $res.missing) { Write-Host 'Some image bundles were not in the cache yet (see above).' }
+            } catch {
+                Write-Host "NOTE: the image install stopped: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "$(Plural @($imagePub.bundles).Count 'image bundle') left Japanese. Re-run with -WithAssets (or answer yes) to add them."
+        }
     }
 }
 

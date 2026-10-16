@@ -32,16 +32,16 @@ unpacked:
 
 ```
 Also install the English images? (113 bundles: logos, banners, badges,
-tutorial captions - already in the download)
+tutorial captions; separate 23 MB download)
     [Y] yes (default)   [N] no    ... 60 s
 ```
 
 Yes is the default and sixty seconds of silence means yes. Answer it up front
 instead with `-WithAssets` (no question), `-NoImages` (text only), or
 `-LanguageOnly` (language bundle alone). Answering no saves no bandwidth — the
-images arrive inside the same zip — it only leaves them Japanese.
+images are their own download, so answering no saves 23 MB and only leaves them Japanese.
 
-It asks because it rewrites files the game ships (~125 MB: ~63 MB of prefab and
+In total it adds ~128 MB to the download: ~41 MB of text bundles, ~23 MB of images
 image bundles + 61 MB in-app + the language bundle), and because the in-app half
 cannot stay installed — DMM verifies that file before it starts the game, so a
 small watcher swaps it in as the game starts and puts the stock file back on

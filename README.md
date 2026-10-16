@@ -69,7 +69,7 @@ Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game upd
   more of it. The **redrawn images** (logos, banners, buttons, badges, tutorial
   captions) are the one thing it asks about, because they change the art:
   yes is the default, and so is 60 seconds of silence. They arrive inside the same
-  ~125 MB download, so answering no costs nothing but leaves them Japanese.
+  a separate ~23 MB download, fetched only if they say yes, so answering no saves it.
   `-WithAssets` answers yes up front, `-NoImages` and `-LanguageOnly` say no.
   Because the in-app half can't stay installed (DMM verifies that file before
   launching), a small watcher swaps it in per session: start the game with

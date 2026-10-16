@@ -8,13 +8,13 @@
 #
 # The installer asks one thing: whether to also install the redrawn images
 # (logos, banners, buttons, tutorial captions). Text and prefabs install without
-# asking; the images come inside the same download, so answering no saves no
+# asking; the images are a separate 23 MB download, fetched only if you say yes,
 # bandwidth. The question defaults to yes, and sixty seconds of silence means
 # yes. Answer it up front instead:
 #   & ([scriptblock]::Create((irm .../install.ps1))) -WithAssets     # yes, no question
 #   & ([scriptblock]::Create((irm .../install.ps1))) -NoImages       # text only, no question
 #   & ([scriptblock]::Create((irm .../install.ps1))) -LanguageOnly   # language bundle only
-# -WithAssets is -Prefabs (English text and images in the cached UI bundles, ~63 MB
+# -WithAssets is -Prefabs (English text and images in the cached UI bundles, ~64 MB
 # download) plus -FirstLoad (the English in-app bundle for the first load's title
 # screen, swapped in per session by Watch-InappSwap.ps1). Either can be used alone.
 #
