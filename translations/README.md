@@ -18,6 +18,11 @@ folder:
 <locale>/hand/*.json      the small ID-keyed tables
 ```
 
+`en/prefab/` and `en/textures/` are PC-only: text and images baked into the game's
+UI bundles, used by [`tools/prefab-patch`](../tools/prefab-patch/README.md), not by
+the translation cache. `en/textures/<name>.png` is the English version of the game
+texture with that name.
+
 English (`en`) is the **canonical** set of keys. Every other locale is **sparse**: it
 only carries the lines it translates, and anything missing falls back to English in
 the built patch. That means a new language can land one theme at a time — see

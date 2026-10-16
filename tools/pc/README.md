@@ -28,7 +28,7 @@ before doing it:
 
 ```
 Also install the full English UI text? (rewrites the text the game ships: the
-cached UI prefabs and the first-load screen; ~105 MB)
+cached UI prefabs, their images and the first-load screen; ~120 MB)
     [Y] yes (default)   [N] no    ... 60 s
 ```
 
@@ -37,7 +37,7 @@ up fully English either way. Answer it up front instead with `-WithAssets` (no
 question) or `-LanguageOnly` (language bundle only); `-Prefabs` and `-FirstLoad`
 are the two halves.
 
-It asks because it rewrites files the game ships (~105 MB: 40 MB of prefabs +
+It asks because it rewrites files the game ships (~120 MB: 55 MB of prefabs +
 61 MB in-app + the language bundle), and because the in-app half cannot stay
 installed — DMM verifies that file before it starts the game, so a small watcher
 swaps it in as the game starts and puts the stock file back on exit. The
@@ -70,8 +70,8 @@ The PC client checks files in **three different places**, so the patch is three 
 | Part | Where it lives | What it does |
 |------|----------------|--------------|
 | **Language bundle** | Unity Addressables **cache** (`…\LocalLow\Unity\GREE Entertainment_クロエコ\…\__data`) | The bulk of the text. An exact-size, CRC-forged English rebuild. |
-| **UI prefabs** (`-Prefabs`) | Same Unity cache | ~7,270 strings baked into 243 cached UI bundles, including ~400 labels the game never overwrites (sign-in, data transfer, purchase warnings). |
-| **in-app patch** (`-FirstLoad`) | `…\StreamingAssets\aa\StandaloneWindows64\inapp_assets_all.bundle` | The first load's title screen, plus 150 baked in-app strings. Swapped in only while the game runs. |
+| **UI prefabs** (`-Prefabs`) | Same Unity cache | ~7,270 strings baked into 243 cached UI bundles, including ~400 labels the game never overwrites (sign-in, data transfer, purchase warnings), plus 137 images with Japanese lettering (gacha and event logos, banners, home buttons, badges, tutorial captions) redrawn in English, in 113 cached bundles. |
+| **in-app patch** (`-FirstLoad`) | `…\StreamingAssets\aa\StandaloneWindows64\inapp_assets_all.bundle` | The first load's title screen, plus 150 baked in-app strings and the title logo. Swapped in only while the game runs. |
 
 Three rules make this work (learned the hard way):
 

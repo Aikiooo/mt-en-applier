@@ -66,8 +66,9 @@ Then click **Play** in DMM GAME PLAYER. Re-run the same command after a game upd
 - **Fully English on the first load (default, PC only).** The installer asks one
   question — *also install the full English UI text?* — and yes is the default, as
   is 60 seconds of silence. That rewrites the text the game itself ships (the
-  cached UI prefabs and the in-app bundle behind the first-load title screen), so
-  nothing stays Japanese until a second load; it costs ~105 MB.
+  cached UI prefabs and the in-app bundle behind the first-load title screen) and
+  swaps in the English versions of the Japanese images (logos, banners, buttons,
+  tutorial captions), so nothing stays Japanese until a second load; it costs ~120 MB.
   `-WithAssets` answers yes up front, `-LanguageOnly` no. Because the in-app half
   can't stay installed (DMM verifies that file before launching), a small watcher
   swaps it in per session: start the game with `Play-in-English.cmd`, then click

@@ -53,7 +53,7 @@ anything about PowerShell or command lines. Just follow the 3 steps.
 
   Just press Enter, or wait - after 60 seconds it goes ahead with
   yes anyway. That is what makes the first screen English instead
-  of partly Japanese; it downloads about 105 MB. Answer N if you
+  of partly Japanese; it downloads about 120 MB. Answer N if you
   would rather have the smaller, language-only patch.
 
   When it says "Install complete", press any key to close it.

@@ -7,6 +7,11 @@ cache layout, to <out>/<name-hash>/<content-hash>/__data with manifest.json
 Only the text objects change; every other object stays byte-identical and the
 original block compression (LZ4HC) is kept.
 
+The same pass writes the English textures (translations/en/textures/<name>.png,
+see textures.py): every cached Texture2D with that name is re-encoded in its
+own format and size, and the manifest lists them per bundle ("textures"). A
+bundle that carries both text and textures gets one file with both.
+
 Bundles whose catalog entry has m_UseCrcForCachedBundles set are left alone and
 listed in <out>/crc-checked.json: the game verifies those against the catalog's
 CRC when it loads them from the cache, so a rewritten file would fail with
@@ -15,6 +20,7 @@ marked that way; none of them carries UI text today, but the flag is a property
 of the catalog, not of these bundles.)
 
   python -I -X utf8 build_prefab_patch.py --translation-cache translation_cache.json [--out DIR]
+      [--textures DIR]   (default translations/en/textures; --textures "" = text only)
 
 Japanese with no translation is left as is and listed in <out>/untranslated.json:
 add those lines to translations/en/prefab/ui-prefab.json and rebuild.
@@ -33,14 +39,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import paths  # noqa: E402
 from prefab_text import CJK, Translator, replace, texts  # noqa: E402
+from textures import DEFAULT_DIR as TEXTURE_DIR, set_textures, texture_files  # noqa: E402
 
 REPO = os.path.normpath(os.path.join(HERE, "..", ".."))
 _tr = None
+_tex = {}
 
 
-def _init(cache_json, prefab_map):
-    global _tr
+def _init(cache_json, prefab_map, textures_dir=None):
+    global _tr, _tex
     _tr = Translator(cache_json, prefab_map)
+    _tex = texture_files(textures_dir)
 
 
 def bundle_hashes(path):
@@ -95,17 +104,18 @@ def patch_bundle(path, rel):
         if ja:
             found += ja
             trees.append((obj, tree))
-    if not found:
+    tex = set_textures(env, _tex)
+    if not found and not tex:
         return None
-    mapping = _tr.build(found)
+    mapping = _tr.build(found) if found else {}
     changed = 0
     for obj, tree in trees:
         n = replace(tree, mapping)
         if n:
             obj.save_typetree(tree)
             changed += n
-    res = {"rel": rel, "changed": changed, "untranslated": sorted(set(found) - set(mapping))}
-    if changed:
+    res = {"rel": rel, "changed": changed, "textures": sorted(tex), "untranslated": sorted(set(found) - set(mapping))}
+    if changed or tex:
         data = env.file.save(packer="original")
         res.update(src_md5=hashlib.md5(src).hexdigest(), out_md5=hashlib.md5(data).hexdigest(),
                    src_size=len(src), out_size=len(data))
@@ -120,6 +130,7 @@ def main():
     ap.add_argument("--cache", help="Unity cache folder (…\\LocalLow\\Unity\\GREE Entertainment_クロエコ)")
     ap.add_argument("--catalog", help="Addressables catalog json (default: newest cached one)")
     ap.add_argument("--out", default=os.path.join(REPO, "build", "prefab-patch"))
+    ap.add_argument("--textures", default=TEXTURE_DIR, help='English texture PNGs ("" = text only)')
     ap.add_argument("--workers", type=int, default=max(2, (os.cpu_count() or 4) - 2))
     a = ap.parse_args()
 
@@ -147,7 +158,10 @@ def main():
     json.dump(sorted("/".join(p.replace("\\", "/").split("/")[-3:]) for p in kept_stock),
               open(os.path.join(a.out, "crc-checked.json"), "w"), indent=1)
     manifest, untranslated = [], set()
-    with ProcessPoolExecutor(a.workers, initializer=_init, initargs=(a.translation_cache, a.prefab_map)) as ex:
+    tex_names = set(texture_files(a.textures))
+    print(len(tex_names), "English textures in", a.textures or "(none)", flush=True)
+    with ProcessPoolExecutor(a.workers, initializer=_init,
+                             initargs=(a.translation_cache, a.prefab_map, a.textures)) as ex:
         futs = []
         for p in bundles:
             rel = "/".join(p.replace("\\", "/").split("/")[-3:])
@@ -157,7 +171,7 @@ def main():
             if not r:
                 continue
             untranslated.update(r.pop("untranslated"))
-            if r["changed"]:
+            if r["changed"] or r["textures"]:
                 dst = os.path.join(a.out, *r["rel"].split("/"))
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 open(dst, "wb").write(r.pop("data"))
@@ -166,8 +180,14 @@ def main():
     json.dump(manifest, open(os.path.join(a.out, "manifest.json"), "w"), indent=1)
     json.dump(sorted(untranslated), open(os.path.join(a.out, "untranslated.json"), "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
-    print(len(manifest), "bundles,", sum(r["changed"] for r in manifest), "text fields;",
+    written = {t for r in manifest for t in r["textures"]}
+    print(len(manifest), "bundles,", sum(r["changed"] for r in manifest), "text fields,",
+          sum(len(r["textures"]) for r in manifest), "textures;",
           len(untranslated), "strings left untranslated (untranslated.json)")
+    if tex_names - written:
+        # in-app only (build_inapp.py writes those), or in a CRC-checked bundle
+        print(len(tex_names - written), "textures not in any patched cache bundle:",
+              ", ".join(sorted(tex_names - written)))
     if kept_stock:
         print(len(kept_stock), "bundles left stock because the game CRC-checks them (crc-checked.json)")
 
