@@ -370,9 +370,9 @@
   "選択肢": "Choix",
   "部屋が見つかりませんでした": "Salon introuvable",
   "配置の入れ替え先のキャラをタップしてください": "Touchez le personnage avec qui échanger la place",
-  "開催日時: hh: mm 00: 00 - hh:mm 00: 00": "Période de l'événement : hh:mm 00:00 - hh:mm 00:00",
-  "開催日時：mm/dd 00: 00 - mm/dd 00: 00": "Période de l'événement : mm/dd 00:00 - mm/dd 00:00",
+  "開催日時: hh: mm 00: 00 - hh:mm 00: 00": "'Période de l\\'événement :' hh:mm 00:00 - hh:mm 00:00",
+  "開催日時：mm/dd 00: 00 - mm/dd 00: 00": "'Période de l\\'événement :' mm/dd 00:00 - mm/dd 00:00",
   "開催期間:{0}26/12/31 11:59 ~ {1}26/12/31 11:59": "Période de l'événement : {0}26/12/31 11:59 ~ {1}26/12/31 11:59",
-  "開催期間：yyyy/mm/dd hh:mmまで": "Période de l'événement : jusqu'au yyyy/mm/dd hh:mm",
+  "開催期間：yyyy/mm/dd hh:mmまで": "'Période de l\\'événement : jusqu\\'au' yyyy/mm/dd hh:mm",
   "魅せカメラ": "Caméra de présentation"
 }
