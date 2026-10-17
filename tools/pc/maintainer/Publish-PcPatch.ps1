@@ -33,7 +33,7 @@
   powershell -File maintainer\Publish-PcPatch.ps1 -Publish
 #>
 param(
-    [string]$SourceDir = 'D:\grok\Mushoku Tensei\pc_client',
+    [string]$SourceDir = 'D:\projects\mushoku-tensei\pc_client',
     [string]$LangBundleName   = 'language-ja_en_exact1898964.bundle',
     # English in-app bundle + the .json build_inapp.py writes next to it.
     [string]$InappBuild       = '',
