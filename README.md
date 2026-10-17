@@ -148,11 +148,13 @@ patching, it counts the Japanese text cells of the source (`AutoPatcher.Result
    game and patches that. If the game doesn't download it within two minutes, it
    asks the player to open the game once and retry.
 
-**Apply falls back to Auto-patch after a game update.** A ready-made patch keeps
-the exact size of the Japanese pack it was built from. Apply compares it with the
-game's Japanese pack (the live one, or the saved copy when a patch is installed):
-when the sizes differ, the game has updated since the patch was published, and
-Apply runs Auto-patch instead of installing a patch made for the old version.
+**Apply falls back to Auto-patch after a game update.** Before installing, Apply
+decrypts the patch and the game's live language pack and compares the row ids of
+every table (`AutoPatcher.rowIds`, about a second on a phone). Row ids are the same
+in every language, so they differ only when the game data changed: then the game
+has updated since the patch was published, and Apply runs Auto-patch instead of
+installing a patch that lacks the new rows. File sizes can't tell this: a patch
+doesn't have to keep the stock size.
 
 When a translated table is too long for its ciphertext, rows go back to Japanese,
 longest first. The patcher sizes that by arithmetic (the plaintext length is the sum

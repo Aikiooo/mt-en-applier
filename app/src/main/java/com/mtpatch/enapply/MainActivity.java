@@ -1474,18 +1474,17 @@ public class MainActivity extends Activity {
                 log("Note: patch is " + fmtBytes(len) + ", expected " + fmtBytes(want) + " (continuing).");
             }
 
-            // A ready-made patch keeps the exact size of the Japanese pack it was made
-            // from. A different size means the game updated since: build it here instead.
-            if (stagedLang != null) {
-                long ja = japaneseSize();
-                if (ja > 0 && ja != len) {
-                    log("This patch was made for an older version of the game"
-                            + " (its language pack is now " + fmtBytes(ja) + "). Auto-patching instead.");
-                    busyLabel = "Auto-patching…";
-                    runAutoPatch();
-                    return;
-                }
+            // After a game update the downloaded patch lacks the new rows (and would
+            // drop them): build the patch on the phone instead.
+            Boolean fits = patchFitsGame(src);
+            if (Boolean.FALSE.equals(fits)) {
+                log("Your game has newer text than this patch (it updated since the patch was made)."
+                        + " Auto-patching instead.");
+                busyLabel = "Auto-patching…";
+                runAutoPatch();
+                return;
             }
+            if (fits == null) log("Couldn't compare the patch with your game; applying it as is.");
 
             shell("am force-stop jp.gree_ent.mushoku");
             saveOriginalIfStock();
@@ -1653,16 +1652,6 @@ public class MainActivity extends Activity {
 
     // ---------------- download latest patch (P1) ----------------
 
-    /** Size of the newest live language bundle on the device, or -1 if none. */
-    private long newestLiveBundleSize() {
-        try {
-            String src = newestLiveBundle();
-            return src == null ? -1 : remoteSize(src);
-        } catch (Throwable t) {
-            return -1;
-        }
-    }
-
     private void onDownload() {
         if (!tryBegin("Downloading…")) return;
         new Thread(() -> {
@@ -1679,15 +1668,6 @@ public class MainActivity extends Activity {
                 String wantMd5 = lang.patchMd5;
                 log("Latest " + lang.name + " patch: " + fmtBytes(wantSize) + ", built "
                         + (lang.builtAt.isEmpty() ? "?" : lang.builtAt) + ".");
-                // Cross-check against the live bundle on the device: if the game
-                // updated since this patch was built, the sizes won't match and
-                // the downloadable patch is the WRONG version for this game.
-                long live = isConnected() ? newestLiveBundleSize() : -1;
-                if (live > 0 && wantSize > 0 && live != wantSize) {
-                    log("⚠ Your game's language pack is " + fmtBytes(live)
-                            + ": the game updated after this patch was built.\n"
-                            + "  Apply will build the patch on this phone instead (Auto-patch).");
-                }
                 File staged = stagedPatch();
                 if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
                     setStagedLang(lang.code);
@@ -1763,13 +1743,31 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Size of the game's Japanese pack: the live one, or the saved original when
-     *  the live one is a patch this app installed. -1 when unknown. */
-    private long japaneseSize() throws Exception {
-        String md5 = readLiveMd5();
-        if (md5 == null || md5.isEmpty()) return -1;
-        if (!isKnownPatch(md5)) return newestLiveBundleSize();
-        return originalMatches(md5) ? originalJa().length() : -1;
+    /** Whether the patch holds the same rows as the game's live language pack.
+     *  Row ids are the same in every language, so they tell game builds apart
+     *  whatever the text. null when it can't be checked. */
+    private Boolean patchFitsGame(File patch) {
+        try {
+            String live = newestLiveBundle();
+            File dir = getExternalFilesDir(null);
+            if (live == null || dir == null) return null;
+            File liveF = new File(dir, "live_check.__data");
+            if (!shell("cp '" + live + "' '" + liveF.getAbsolutePath() + "' && echo OK").out.contains("OK"))
+                return null;
+            byte[][] k = gameKeys(dir);
+            List<String> names = tableNames();
+            Map<String, List<String>> game = AutoPatcher.rowIds(
+                    java.nio.file.Files.readAllBytes(liveF.toPath()), k[0], k[1], names,
+                    (pct, phase) -> progress(pct / 2, "Checking the patch against your game"));
+            liveF.delete();
+            Map<String, List<String>> ours = AutoPatcher.rowIds(
+                    java.nio.file.Files.readAllBytes(patch.toPath()), k[0], k[1], names,
+                    (pct, phase) -> progress(50 + pct / 2, "Checking the patch against your game"));
+            if (game.size() < 100 || ours.size() < 100) return null;
+            return game.equals(ours);
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /** Fresh version.json when online (saved for later), else the saved copy, else null. */
@@ -2135,31 +2133,33 @@ public class MainActivity extends Activity {
     }
 
     /** @param retried true on the second pass, after the game re-downloaded Japanese. */
-    private void doAutoPatch(boolean retried) throws Exception {
-        if (!retried) section("Auto-patch");
-        else log("The game downloaded its Japanese pack. Patching from it…");
-        progress(0, "Reading the game files");
-        shell("am force-stop " + GAME_PKG);
+    /** Names of the language pack's tables (bundled asset). */
+    private List<String> tableNames() throws java.io.IOException {
+        List<String> names = new ArrayList<>();
+        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(
+                getAssets().open("tables.txt")))) {
+            String ln;
+            while ((ln = br.readLine()) != null) {
+                ln = ln.trim();
+                if (!ln.isEmpty()) names.add(ln);
+            }
+        }
+        return names;
+    }
 
-        // 1. live bundle path(s)
-        List<String> dests = findLiveBundles();
-        if (dests.isEmpty())
-            throw new AutoPatchFail("no language pack on the device. Open the game once so it downloads its data.");
+    private boolean builtInKeyOffsets;
 
-        // source = NEWEST bundle (an old asset-hash folder may linger post-update)
-        String newest = newestLiveBundle();
-        String srcBundle = newest != null ? newest : dests.get(0);
+    private String keyMismatch() {
+        return "the AES keys don't match this game build"
+                + (builtInKeyOffsets ? " (built-in key offsets were used)." : ".");
+    }
 
-        // 2. stage bundle + global-metadata into our own dir (shell uid can read them)
-        File dir = getExternalFilesDir(null);
-        if (dir == null) throw new AutoPatchFail("app storage is unavailable.");
+    /** The game's AES keys, read from its global-metadata.dat (copied into dir).
+     *  Offsets come from the live version.json; the baked fallback goes stale
+     *  with every game update. */
+    private byte[][] gameKeys(File dir) throws Exception {
         String q = dir.getAbsolutePath();
-        File stockF = new File(dir, "stock_new.__data");
         File metaF = new File(dir, "global-metadata.dat");
-        ShellResult r1 = shell("cp '" + srcBundle + "' '" + q
-                + "/stock_new.__data' && echo OK1");
-        if (!r1.out.contains("OK1"))
-            throw new AutoPatchFail("could not read the game's language pack" + r1.reason() + ".");
         ShellResult r2 = shell("cp '" + META_PATH + "' '" + q
                 + "/global-metadata.dat' && echo OK2");
         if (!r2.out.contains("OK2")) {
@@ -2172,12 +2172,7 @@ public class MainActivity extends Activity {
                 throw new AutoPatchFail("could not read the game's metadata" + r2.reason() + ".");
         }
 
-        progress(5, "Reading the game's keys");
-        // 3. AES keys from the game's own metadata. Offsets come from the live
-        // version.json; the baked fallback goes stale with every game update.
         Map<String, Object> v = loadReleaseInfo();
-        PatchLanguage lang = selectedLanguage();
-        log("Language: " + lang.name + ".");
         int keyOff = FALLBACK_KEY_OFF, ivOff = FALLBACK_IV_OFF;
         boolean liveOffsets = false;
         if (v != null && v.containsKey("meta_key_off") && v.containsKey("meta_iv_off")) {
@@ -2195,15 +2190,46 @@ public class MainActivity extends Activity {
                     + String.format(Locale.US, "0x%x/0x%x", keyOff, ivOff) + ".\n"
                     + "⚠ These go stale with game updates. Go online and retry if this fails.");
         }
-        String keyMismatch = "the AES keys don't match this game build"
-                + (liveOffsets ? "." : " (built-in key offsets were used).");
+        builtInKeyOffsets = !liveOffsets;
         byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
         byte[][] keys;
         try {
             keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
         } catch (IllegalArgumentException e) {
-            throw new AutoPatchFail(keyMismatch);
+            throw new AutoPatchFail(keyMismatch());
         }
+
+        return keys;
+    }
+
+    private void doAutoPatch(boolean retried) throws Exception {
+        if (!retried) section("Auto-patch");
+        else log("The game downloaded its Japanese pack. Patching from it…");
+        progress(0, "Reading the game files");
+        shell("am force-stop " + GAME_PKG);
+
+        // 1. live bundle path(s)
+        List<String> dests = findLiveBundles();
+        if (dests.isEmpty())
+            throw new AutoPatchFail("no language pack on the device. Open the game once so it downloads its data.");
+
+        // source = NEWEST bundle (an old asset-hash folder may linger post-update)
+        String newest = newestLiveBundle();
+        String srcBundle = newest != null ? newest : dests.get(0);
+
+        // 2. stage the bundle into our own dir (the shell uid can write it there)
+        File dir = getExternalFilesDir(null);
+        if (dir == null) throw new AutoPatchFail("app storage is unavailable.");
+        String q = dir.getAbsolutePath();
+        File stockF = new File(dir, "stock_new.__data");
+        ShellResult r1 = shell("cp '" + srcBundle + "' '" + q
+                + "/stock_new.__data' && echo OK1");
+        if (!r1.out.contains("OK1"))
+            throw new AutoPatchFail("could not read the game's language pack" + r1.reason() + ".");
+        progress(5, "Reading the game's keys");
+        byte[][] keys = gameKeys(dir);
+        PatchLanguage lang = selectedLanguage();
+        log("Language: " + lang.name + ".");
 
         // 4. translation cache (refreshed whenever the release is newer)
         progress(7, "Loading the translations");
@@ -2231,15 +2257,7 @@ public class MainActivity extends Activity {
         }
 
         // 5. known table names (bundled asset)
-        List<String> names = new ArrayList<>();
-        try (java.io.BufferedReader br = new java.io.BufferedReader(new java.io.InputStreamReader(
-                getAssets().open("tables.txt")))) {
-            String ln;
-            while ((ln = br.readLine()) != null) {
-                ln = ln.trim();
-                if (!ln.isEmpty()) names.add(ln);
-            }
-        }
+        List<String> names = tableNames();
 
         // 6. start from the Japanese original: a pack this app installed is a
         // patch, so use the saved original it was built from, if any.
@@ -2264,7 +2282,7 @@ public class MainActivity extends Activity {
             res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add,
                     (pct, phase) -> progress(10 + pct * 80 / 100, phase));
         } catch (IllegalStateException e) {
-            if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch);
+            if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch());
             throw e;
         }
         // Someone else's patch, or a saved copy that isn't Japanese after all.

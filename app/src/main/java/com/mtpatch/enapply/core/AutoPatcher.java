@@ -272,6 +272,32 @@ public final class AutoPatcher {
         return note;
     }
 
+    /** Each table's row ids, in order. Ids are the same in every language, so two
+     *  packs with equal ids hold the same game data (a patch fits that game build).
+     *  Tables that aren't found are left out. */
+    public static Map<String, List<String>> rowIds(byte[] bundle, byte[] key, byte[] iv,
+                                                    List<String> tableNames, Progress prog) {
+        UnityFs.Bundle fs = UnityFs.open(bundle);
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        for (TableHit h : findTables(fs.full, tableNames, key, iv, s -> {}, prog, 0, 100)) {
+            String text;
+            try {
+                text = new String(MasterCrypto.decrypt(h.ct, key, iv), StandardCharsets.UTF_8);
+            } catch (Throwable t) {
+                continue;
+            }
+            String[] lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n", -1);
+            List<String> ids = new ArrayList<>(lines.length);
+            for (int i = 1; i < lines.length; i++) {
+                if (lines[i].trim().isEmpty()) continue;
+                int tab = lines[i].indexOf('\t');
+                ids.add(tab < 0 ? lines[i] : lines[i].substring(0, tab));
+            }
+            out.put(h.name, ids);
+        }
+        return out;
+    }
+
     public static Result run(byte[] stock, byte[] key, byte[] iv,
                              Map<String, String> cache,
                              Map<String, Map<String, String>> hand,

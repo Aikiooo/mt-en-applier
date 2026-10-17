@@ -18,6 +18,32 @@ import java.util.Map;
 public final class AutoPatchMain {
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 5 && args[0].equals("--same-rows")) {
+            // --same-rows <pack A> <pack B> <keys.json> <tables.txt>
+            Map<String, String> keys = JsonMap.parseFlat(Files.readString(Path.of(args[3])));
+            List<String> names = Files.readAllLines(Paths.get(args[4]));
+            long t0 = System.currentTimeMillis();
+            Map<String, List<String>> a = AutoPatcher.rowIds(Files.readAllBytes(Paths.get(args[1])),
+                    hex(keys.get("key_hex")), hex(keys.get("iv_hex")), names, (p, s) -> {});
+            long t1 = System.currentTimeMillis();
+            Map<String, List<String>> b = AutoPatcher.rowIds(Files.readAllBytes(Paths.get(args[2])),
+                    hex(keys.get("key_hex")), hex(keys.get("iv_hex")), names, (p, s) -> {});
+            long t2 = System.currentTimeMillis();
+            int diff = 0;
+            for (String t : a.keySet()) {
+                if (!a.get(t).equals(b.get(t))) {
+                    diff++;
+                    List<String> only = new java.util.ArrayList<>(a.get(t));
+                    if (b.get(t) != null) only.removeAll(b.get(t));
+                    System.out.println(t + ": " + a.get(t).size() + " vs "
+                            + (b.get(t) == null ? "missing" : b.get(t).size()) + " rows, new in A: "
+                            + only.subList(0, Math.min(5, only.size())));
+                }
+            }
+            System.out.println(a.size() + "/" + b.size() + " tables, " + diff + " differ; "
+                    + (t1 - t0) + " ms + " + (t2 - t1) + " ms");
+            return;
+        }
         if (args.length != 5) {
             System.err.println("usage: AutoPatchMain <stock> <keys.json> <cache.json> <tables.txt> <out>");
             System.exit(2);
