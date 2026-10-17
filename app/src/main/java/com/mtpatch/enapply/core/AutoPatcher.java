@@ -25,6 +25,13 @@ public final class AutoPatcher {
 
     public interface Log { void log(String s); }
 
+    /** Work done so far, 0..100, with a short phase label for the UI. */
+    public interface Progress { void at(int pct, String phase); }
+
+    /** Below this share of Japanese text cells the source is a patched bundle,
+     *  not the Japanese original: stock is ~99%, the published patches 0%. */
+    public static final double MIN_JA_SHARE = 0.20;
+
     public static final class TableHit {
         final String name; final int off; final byte[] ct;
         TableHit(String name, int off, byte[] ct) { this.name = name; this.off = off; this.ct = ct; }
@@ -33,7 +40,15 @@ public final class AutoPatcher {
     public static final class Result {
         public byte[] data;
         public int tablesFound, patched, fitAfterRevert, jaOnly, skipped, leftJaCells;
+        /** Source text cells (with a letter or kana/kanji), and those in Japanese. */
+        public int textCellsIn, jaCellsIn;
         public final List<String> lines = new ArrayList<>();
+
+        /** Whether the source was the Japanese original. The cache matches
+         *  Japanese text only, so patching anything else changes almost nothing. */
+        public boolean sourceIsJapanese() {
+            return textCellsIn > 0 && jaCellsIn >= MIN_JA_SHARE * textCellsIn;
+        }
     }
 
     private AutoPatcher() {}
@@ -60,6 +75,12 @@ public final class AutoPatcher {
         return c <= ' ' || Character.isWhitespace(c);
     }
 
+    private static boolean hasLetter(String s) {
+        for (int i = 0; i < s.length(); i++)
+            if (Character.isLetter(s.charAt(i))) return true;
+        return false;
+    }
+
     static boolean hasCjk(String s) {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
@@ -75,9 +96,11 @@ public final class AutoPatcher {
      * candidate required; otherwise the table is skipped (stays Japanese).
      */
     static List<TableHit> findTables(byte[] full, List<String> names,
-                                     byte[] key, byte[] iv, Log log) {
+                                     byte[] key, byte[] iv, Log log, Progress prog, int p0, int p1) {
         List<TableHit> out = new ArrayList<>();
-        for (String name : names) {
+        for (int n = 0; n < names.size(); n++) {
+            String name = names.get(n);
+            prog.at(p0 + (p1 - p0) * n / names.size(), "Finding tables");
             byte[] needle = name.getBytes(StandardCharsets.UTF_8);
             int from = 0;
             TableHit hit = null;
@@ -145,6 +168,16 @@ public final class AutoPatcher {
         return sb.toString();
     }
 
+    /** Bytes this row adds to toPlain(buildText(...)): the text is normalized
+     *  row by row, so a table's plaintext length is the sum over its rows. */
+    private static int plainLen(String id, String[] vals) {
+        StringBuilder sb = new StringBuilder(id);
+        for (String v : vals) sb.append('\t').append(v);
+        sb.append('\n');
+        return sb.toString().replace("\r\n", "\n").replace("\r", "\n")
+                .getBytes(StandardCharsets.UTF_8).length;
+    }
+
     private static int byteLen(String[] vals) {
         int n = 0;
         for (String v : vals) n += v.getBytes(StandardCharsets.UTF_8).length + 1;
@@ -178,6 +211,8 @@ public final class AutoPatcher {
             String[] jv = e.getValue();
             String[] vals = new String[jv.length];
             for (int i = 0; i < jv.length; i++) {
+                if (hasLetter(jv[i])) r.textCellsIn++;
+                if (hasCjk(jv[i])) r.jaCellsIn++;
                 String en = cache.get(jaTrim(jv[i]));
                 if (en != null && !en.isEmpty()) vals[i] = en;
                 else { vals[i] = jv[i]; if (hasCjk(jv[i])) r.leftJaCells++; }
@@ -207,11 +242,20 @@ public final class AutoPatcher {
                     deltas.add(new int[]{byteLen(v) - byteLen(jv), i});
             }
             deltas.sort((a, b) -> Integer.compare(b[0], a[0]));
+            // Same rows reverted as re-encrypting after each one, but sized by
+            // arithmetic: it fits once the plaintext is at most ct length - 1.
+            // (Re-encrypting each time took minutes on the story tables.)
+            long plain = header.getBytes(StandardCharsets.UTF_8).length + 1;   // header line
+            for (Map.Entry<String, String[]> e : rows.entrySet()) plain += plainLen(e.getKey(), e.getValue());
             for (int[] d : deltas) {
-                rows.put(ids.get(d[1]), jaRows.get(ids.get(d[1])));
-                ct = MasterCrypto.encryptFit(MasterCrypto.toPlain(buildText(header, rows)),
-                        key, iv, h.ct.length);
-                if (ct != null) { note = "fit_after_revert"; r.fitAfterRevert++; break; }
+                String id = ids.get(d[1]);
+                plain += plainLen(id, jaRows.get(id)) - plainLen(id, rows.get(id));
+                rows.put(id, jaRows.get(id));
+                if (plain <= h.ct.length - 1) {
+                    ct = MasterCrypto.encryptFit(MasterCrypto.toPlain(buildText(header, rows)),
+                            key, iv, h.ct.length);
+                    if (ct != null) { note = "fit_after_revert"; r.fitAfterRevert++; break; }
+                }
             }
             if (ct == null) {
                 ct = MasterCrypto.encryptFit(MasterCrypto.toPlain(norm), key, iv, h.ct.length);
@@ -232,21 +276,33 @@ public final class AutoPatcher {
                              Map<String, String> cache,
                              Map<String, Map<String, String>> hand,
                              List<String> tableNames, Log log) {
+        return run(stock, key, iv, cache, hand, tableNames, log, (p, s) -> {});
+    }
+
+    public static Result run(byte[] stock, byte[] key, byte[] iv,
+                             Map<String, String> cache,
+                             Map<String, Map<String, String>> hand,
+                             List<String> tableNames, Log log, Progress prog) {
         Result r = new Result();
+        prog.at(0, "Unpacking the language pack");
         UnityFs.Bundle fs = UnityFs.open(stock);
         log.log("UnityFS: " + fs.blocks.length + " blocks, engine " + fs.hdr.uv
                 + ", stream " + fs.full.length + " bytes");
-        List<TableHit> hits = findTables(fs.full, tableNames, key, iv, log);
+        List<TableHit> hits = findTables(fs.full, tableNames, key, iv, log, prog, 10, 45);
         r.tablesFound = hits.size();
         if (hits.size() < 100)
             throw new IllegalStateException("only " + hits.size()
                     + " tables located — AES keys do not match this bundle?");
-        for (TableHit h : hits) {
+        for (int i = 0; i < hits.size(); i++) {
+            TableHit h = hits.get(i);
+            prog.at(45 + 45 * i / hits.size(), "Translating tables (" + (i + 1) + "/" + hits.size() + ")");
             String note = patchTable(fs, h, key, iv, cache, hand, r);
             if (!"fit".equals(note)) log.log(h.name + ": " + note);
         }
+        prog.at(90, "Repacking the language pack");
         UnityFs.reslice(fs);
         r.data = UnityFs.rebuild(fs);
+        prog.at(100, "Repacked");
         return r;
     }
 }

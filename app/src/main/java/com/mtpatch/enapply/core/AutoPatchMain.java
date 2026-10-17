@@ -63,6 +63,8 @@ public final class AutoPatchMain {
                 + " (fit_after_revert=" + r.fitAfterRevert + ", ja_only=" + r.jaOnly
                 + ", skipped=" + r.skipped + ")");
         System.out.println("cells left JA: " + r.leftJaCells);
+        System.out.println("source JA    : " + r.jaCellsIn + "/" + r.textCellsIn + " text cells"
+                + (r.sourceIsJapanese() ? " (Japanese original)" : " (NOT Japanese: already patched?)"));
         System.out.println("out          : " + args[4] + " (" + r.data.length + " bytes, md5 "
                 + MasterCrypto.md5Hex(r.data) + ") in " + ms + " ms");
     }

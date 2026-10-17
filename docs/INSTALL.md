@@ -55,10 +55,16 @@ The app tells you when a newer version of itself is out ("Get update").
 
 - **After a game update**, the game may re-download the Japanese file. Open the app
   and tap **Download latest patch**, then **Apply**. If no patch for the new game
-  version is out yet, use **Auto-patch after update (beta)**: the phone rebuilds the
-  translation from the new Japanese data (only brand-new text stays Japanese).
-- **Back to Japanese:** tap **Delete all language packs (reset)**; the game
-  re-downloads the Japanese text.
+  version is out yet, use **Auto-patch after update**: the phone rebuilds the
+  translation from the new Japanese data in a few seconds (only brand-new text stays
+  Japanese). If another language is installed, it may open the game for a moment to
+  get the Japanese data back; leave it until it comes back to the app.
+- **Translated images (optional):** turn on **Translated images**, then Apply or
+  Auto-patch again: buttons, banners and logos with Japanese lettering are replaced
+  too (about 17 MB).
+- **Back to Japanese:** tap **Delete all language packs (reset)** for the text and
+  **Remove translated images** for the images; the game re-downloads the Japanese
+  files at next launch.
 - The game itself is untouched (stock, Play-signed), so logins and updates keep working.
 - Some lines only switch to English the second time a screen loads: go back to the
   title menu and re-enter.

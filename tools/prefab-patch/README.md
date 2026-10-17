@@ -67,6 +67,38 @@ as they are.
 
 Tested in-game on client 1.2.0 (2026-10-16), with the same builds byte for byte.
 
+## Android images
+
+The Android client caches the same image bundles, under the same name folder
+(`UnityCache/Shared/<name folder>/`); only the version folder differs. 137 of the
+textures above are there (all but `TitleLogo_01`), as **ASTC 6×6 without mips**, and `textures.set_textures`
+re-encodes them in that format (UnityPy with `astc_encoder`). The game doesn't
+CRC-check these bundles on Android: the patched files load as they are.
+
+`build_android_images.py` builds one zip per language from **stock** Android bundles:
+
+```powershell
+# stock bundles, one file per name folder (pull them from a phone that never had images installed)
+adb shell 'cd /sdcard/Android/data/jp.gree_ent.mushoku/files/UnityCache/Shared; for d in <name folders>; do cp "$(ls -t $d/*/__data | head -1)" /data/local/tmp/ab/$d; done'
+adb pull /data/local/tmp/ab ..\mt_db\build\android_image_stock
+
+py -I -X utf8 tools\prefab-patch\build_android_images.py --stock ..\mt_db\build\android_image_stock --locale fr
+py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr            # dry run
+py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr --publish
+```
+
+- The name folders are the first part of each `rel` in `build/prefab-patch/manifest.json`.
+- Output: `build/android-images-<locale>.zip`, about 17 MB: `manifest.json`
+  (`bundle`, `src_md5`, `out_md5`, `size`, `textures`) and one patched bundle per name
+  folder. Builds are deterministic.
+- `TitleLogo_01` is reported as missing: on Android it lives in the in-app bundle,
+  inside the game's APK.
+- The publisher uploads the zip, then merges `images`, `images_md5` and `images_size`
+  into `version.json` (top level for English, `locales.<code>` otherwise).
+- The app writes a cached bundle only when its md5 is the manifest's `src_md5` or one
+  it wrote itself. After a game update changes a bundle, that bundle stays Japanese
+  until the zip is rebuilt from the new stock.
+
 ## Build (maintainer, after each game update)
 
 ```powershell

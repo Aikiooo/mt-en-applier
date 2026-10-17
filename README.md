@@ -46,10 +46,17 @@ You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/de
   the old one. Your game and patch aren't affected, and later versions install
   over the top. The app now shows a **Get update** banner when a new version is out.
 - **After a game update:** open the app, **Download latest patch**, **Apply**. If no
-  patch for the new game version is out yet, **Auto-patch after update (beta)**
-  rebuilds the translation on the phone (only brand-new text stays Japanese).
-- **Back to Japanese:** **Delete all language packs (reset)**; the game re-downloads
-  the Japanese text.
+  patch for the new game version is out yet, **Auto-patch after update** rebuilds
+  the translation on the phone in a few seconds (only brand-new text stays
+  Japanese). Apply does this by itself when the published patch is older than the
+  game. Auto-patch also switches between languages: it always translates from the
+  game's Japanese text, and fetches it again by itself when a patch is installed.
+- **Translated images** (opt-in): turn on the **Translated images** switch and the
+  next Apply or Auto-patch also replaces the buttons, banners and logos that have
+  Japanese lettering, in the chosen language (about 17 MB).
+- **Back to Japanese:** **Delete all language packs (reset)** for the text and
+  **Remove translated images** for the images; the game re-downloads the Japanese
+  files at next launch.
 - **Shizuku keeps stopping?** See the troubleshooting section of `INSTALL.md`, and
   tap the status card at the top of the app for **Diagnostics**.
 
@@ -112,9 +119,56 @@ folder changes with updates, and a mirror lives under `files/il2cpp/`), copies t
 patch over each, and checks the size on the device.
 
 - **Download** reads `version.json` on `patch-latest` and verifies the patch's size and md5.
-- **Auto-patch (beta)** takes the AES keys from the game's own `global-metadata.dat`
+- **Auto-patch** takes the AES keys from the game's own `global-metadata.dat`
   (offsets from `version.json`), decrypts the new bundle, overlays the translation
-  cache and rebuilds it on the phone (`core/AutoPatcher`).
+  cache and rebuilds it on the phone (`core/AutoPatcher`). The status card shows its
+  progress. Details below.
+- **Translated images** (opt-in) overwrite the game's cached image bundles with the
+  release's per-language build. Details below.
+
+**The shell can overwrite the game's cache files but not delete them.** The cache
+folders are `drwxr-s---` (owner: the game, group `ext_data_rw`) and the files
+`rw-rw----`, so the shell uid (in `ext_data_rw`) can write a file but not unlink it.
+To make the game download a bundle again, the app empties that entry's `__info`
+(Unity's cache record, `-1 / timestamp / 1 / __data`): Unity then treats the entry
+as not cached and downloads it at next launch. Reset, Remove translated images and
+Auto-patch's re-download all work this way.
+
+**Auto-patch always translates from Japanese.** The translation cache matches
+Japanese text, so patching an already patched bundle changes almost nothing. Before
+patching, it counts the Japanese text cells of the source (`AutoPatcher.Result
+.sourceIsJapanese()`: the stock bundle is ~99% Japanese, a patched one ~0%):
+
+1. It keeps a copy of the Japanese bundle whenever it sees one (`original_ja.__data`
+   in the app's files, also taken by Apply before it overwrites the stock bundle).
+2. When the game holds a patch this app installed, it starts from that copy, if the
+   copy is the bundle that patch was built from.
+3. Otherwise it empties the language entries' `__info`, opens the game, waits for
+   Unity to write the fresh Japanese bundle (its `__info` comes back), closes the
+   game and patches that. If the game doesn't download it within two minutes, it
+   asks the player to open the game once and retry.
+
+**Apply falls back to Auto-patch after a game update.** A ready-made patch keeps
+the exact size of the Japanese pack it was built from. Apply compares it with the
+game's Japanese pack (the live one, or the saved copy when a patch is installed):
+when the sizes differ, the game has updated since the patch was published, and
+Apply runs Auto-patch instead of installing a patch made for the old version.
+
+When a translated table is too long for its ciphertext, rows go back to Japanese,
+longest first. The patcher sizes that by arithmetic (the plaintext length is the sum
+of its rows) and encrypts once, so the whole patch takes about half a second on a PC.
+
+**Translated images.** The game caches its image bundles like the language pack, at
+`UnityCache/Shared/<name folder>/<version folder>/__data`. The name folder is the same
+as on PC; only the version folder differs. Android textures are ASTC 6×6.
+`android-images-<code>.zip` on the release holds each patched bundle under its name
+folder plus a manifest with its stock (`src_md5`) and patched (`out_md5`) md5. The
+app overwrites a cached copy only when it is stock or a bundle it wrote itself (any
+language), so switching languages works and a bundle the game updated stays
+Japanese. Switching to a language without images, or with the switch off, takes
+away the previous language's images rather than mixing them. Built by
+[`tools/prefab-patch/build_android_images.py`](tools/prefab-patch/build_android_images.py);
+see [`tools/prefab-patch/README.md`](tools/prefab-patch/README.md#android-images).
 - **Update check** looks for the highest `vX.Y.Z` GitHub release carrying `MT-EN-Applier.apk`.
 
 The APK contains no game data and no encryption keys.
@@ -129,7 +183,8 @@ gradlew.bat assembleRelease   :: app\build\outputs\apk\release\app-release.apk (
 AGP 9.3.0 / Gradle 9.5.1, Java 17 bytecode, `compileSdk 37`, `minSdk 26`. The UI is
 plain Java with no UI libraries. Dependencies: the vendored Shizuku API client
 (`rikka.shizuku.*`, `moe.shizuku.*` AIDL; MIT, © RikkaApps), `hiddenapibypass` for
-hidden-API access on Android 9+, and `lz4-java` for the auto-patcher.
+hidden-API access on Android 9+, and `lz4-java` plus `org.tukaani:xz` (LZMA blocks)
+for the auto-patcher.
 
 Release builds are signed with the project key, which lives **outside the repo**
 (`~/.android/mt-en-applier-release.properties`, or `-PmtReleaseProps=<path>`).
@@ -156,6 +211,11 @@ or users can't update over their installed copy.
 - **Other languages:** [`tools/translations/Publish-Locale.ps1`](tools/translations/Publish-Locale.ps1)
   (see [`translations/README.md`](translations/README.md#publishing-a-language-to-the-app)).
   Re-run it after each English release, which rewrites `version.json`.
+- **Android images:** [`tools/prefab-patch/publish_android_images.py`](tools/prefab-patch/publish_android_images.py)
+  `--locale <code> --publish` (English included). Re-run it after each English release too.
+- **English cache:** `version.json` must carry a top-level `cache_md5` (the md5 of
+  `translation_cache.json`). The app re-downloads its cache only when that stamp
+  changes, so a cache uploaded without it never reaches the phones that have one.
 
 ### Roadmap
 
@@ -163,8 +223,8 @@ or users can't update over their installed copy.
 - Keep the `locales` block of `version.json` when the English release is republished.
 - Server-side auto-build on game updates (GitHub Actions / watcher), so `patch-latest`
   refreshes without a manual run.
-- Japanese **textures** (~170: title logo, gacha/event logos, quest cards) — still a
-  separate follow-up; text is covered on PC.
+- Textures for events newer than the redrawn set (e.g. the current pickup banners), and
+  the title logo on Android, which lives inside the game's APK.
 - Android first-load fix: the in-app bundle there lives inside the APK, so the PC
   approach (swap the StreamingAssets copy at launch) doesn't transfer.
 

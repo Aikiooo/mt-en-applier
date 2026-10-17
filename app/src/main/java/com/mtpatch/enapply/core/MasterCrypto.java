@@ -1,6 +1,7 @@
 package com.mtpatch.enapply.core;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -81,14 +82,14 @@ public final class MasterCrypto {
     public static byte[] encryptFit(byte[] plain, byte[] key, byte[] iv, int targetCt) {
         int maxP = targetCt - 1, minP = targetCt - 16;
         if (plain.length > maxP) return null;
+        // Pad with '\n' in one step: any length in [minP, maxP] gives exactly
+        // targetCt bytes of PKCS7 ciphertext when targetCt is a multiple of 16.
         byte[] p = plain;
-        while (p.length < minP) p = appendLf(p);
-        while (true) {
-            int ctLen = ((p.length / 16) + 1) * 16;
-            if (ctLen == targetCt) break;
-            if (ctLen > targetCt || p.length >= maxP) return null;
-            p = appendLf(p);
+        if (p.length < minP) {
+            p = Arrays.copyOf(plain, minP);
+            Arrays.fill(p, plain.length, minP, (byte) '\n');
         }
+        if (((p.length / 16) + 1) * 16 != targetCt) return null;
         try {
             Cipher c = Cipher.getInstance("AES/CBC/PKCS5Padding");
             c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"), new IvParameterSpec(iv));
@@ -97,13 +98,6 @@ public final class MasterCrypto {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private static byte[] appendLf(byte[] in) {
-        byte[] out = new byte[in.length + 1];
-        System.arraycopy(in, 0, out, 0, in.length);
-        out[in.length] = '\n';
-        return out;
     }
 
     public static int leInt(byte[] b, int off) {

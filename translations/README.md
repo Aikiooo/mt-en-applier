@@ -92,6 +92,32 @@ screen, not just its translated text — give it `prefab/ui-prefab.json` and
 and [`fr/textures/`](fr/textures/) do. The maintainer section below builds and
 publishes them.
 
+## Translating images
+
+Images with Japanese lettering (buttons, banners, gacha and event logos, badges,
+tutorial captions) are redrawn per language in `translations/<code>/textures/`:
+
+- One PNG per game texture, named exactly after it (`Icon_Home_Command_Gacha.png`).
+  [`en/textures/`](en/textures/) lists every texture covered today; start from the
+  English file, or from the Japanese original extracted from the game.
+- Keep the game's size. A PNG of another size is stretched to it, without keeping
+  the aspect ratio.
+- Keep the transparency and the art: only the lettering changes. The English set
+  removes the Japanese text, rebuilds the background, then letters the new text in
+  the game's fonts and styles (gradient fill, outline, glow).
+- A missing PNG leaves that texture Japanese for the locale. A PNG named after a
+  texture the game doesn't have is reported by the build and ignored.
+
+The same folder feeds both platforms:
+
+- **PC:** `build_prefab_patch.py --textures translations/<code>/textures` (DXT).
+- **Android:** `build_android_images.py --locale <code>` (ASTC 6×6), published with
+  `publish_android_images.py`. The app offers images for a language once its
+  `images` keys are on the release, and installs them only when the player turns on
+  **Translated images**.
+
+Details: [`tools/prefab-patch/README.md`](../tools/prefab-patch/README.md#textures).
+
 ## For maintainers
 
 Rebuild one locale from these sources:
@@ -173,4 +199,6 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Pu
 - The app hides a language's Download once the game updates (the patch's
   `stock_md5` no longer matches the release's), leaving Auto-patch.
 - `update_translation.py` rewrites `version.json` on every English release, which
-  drops the `locales` block. Re-run `Publish-Locale.ps1` for each language afterwards.
+  drops the `locales` block, the `images` keys and `cache_md5`. Re-run
+  `Publish-Locale.ps1` and `publish_android_images.py` for each language afterwards,
+  and put back `cache_md5` (see the main README's Releasing section).
