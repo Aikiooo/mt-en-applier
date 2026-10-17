@@ -1,7 +1,7 @@
 # MT-EN Applier
 
-Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes*, on Android
-and Windows (DMM).
+Unofficial **English patch** for *Mushoku Tensei: Chronicle of Echoes*, on Android,
+iPhone / iPad and Windows (DMM).
 
 <p align="center"><strong>New here?</strong> The plain-language walkthrough covers every platform with pictures:</p>
 
@@ -16,6 +16,7 @@ and Windows (DMM).
 | Platform | How | Guide |
 |----------|-----|-------|
 | **Android phone** (no root) | The MT-EN Applier app + Shizuku | [below](#android-phone) |
+| **iPhone / iPad** (no cable, no jailbreak) | A Windows PC on the same Wi-Fi + the free WireGuard app | [below](#iphone--ipad) · [`docs/INSTALL-iOS.md`](docs/INSTALL-iOS.md) |
 | **Windows PC** (DMM GAME PLAYER) | One PowerShell command, or a zip | [below](#windows-pc-dmm) · [`tools/pc/README.md`](tools/pc/README.md) |
 | **Android emulator / rooted / Google Play Games PC** | adb script | [`tools/reapply-en-patch.ps1`](tools/reapply-en-patch.ps1) |
 
@@ -59,6 +60,25 @@ You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/de
   files at next launch.
 - **Shizuku keeps stopping?** See the troubleshooting section of `INSTALL.md`, and
   tap the status card at the top of the app for **Diagnostics**.
+
+### iPhone / iPad
+
+Free, no cable, no jailbreak: a Windows PC on the same Wi-Fi hands the game English copies
+of its text and image downloads, and the game keeps them. The PC is only needed while the
+game downloads.
+
+1. On the PC, download
+   [`MT-EN-iOS.zip`](https://github.com/Aikiooo/mt-en-applier/releases/download/ios-latest/MT-EN-iOS.zip),
+   extract it and double-click **Installer-iOS.bat**. A page opens with the steps.
+2. On the iPhone, install the free **[WireGuard](https://apps.apple.com/app/wireguard/id1441195209)**
+   app and scan the page's QR code; then scan the second code and trust the certificate
+   (once).
+3. Open the game, title menu › **Delete local data** (account and progress stay). The game
+   downloads its files again, in English. Then switch the tunnel off and close the PC window.
+
+[`docs/INSTALL-iOS.md`](docs/INSTALL-iOS.md) walks through every tap. The title-screen menu
+and first-load tips live inside the app, which iOS doesn't let anyone change: load twice.
+Maintainers: [`tools/ios/README.md`](tools/ios/README.md).
 
 ### Windows PC (DMM)
 
