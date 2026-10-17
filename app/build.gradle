@@ -10,8 +10,8 @@ android {
         applicationId "com.mtpatch.enapply"
         minSdk 26
         targetSdk 34
-        versionCode 13
-        versionName "2.5.2"
+        versionCode 14
+        versionName "2.6.0"
     }
 
     // Release signing key lives OUTSIDE the repo (never commit it). Path from the
