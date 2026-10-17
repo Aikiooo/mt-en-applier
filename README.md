@@ -217,6 +217,11 @@ or users can't update over their installed copy.
   Re-run it after each English release, which rewrites `version.json`.
 - **Android images:** [`tools/prefab-patch/publish_android_images.py`](tools/prefab-patch/publish_android_images.py)
   `--locale <code> --publish` (English included). Re-run it after each English release too.
+- **After a game update:** the maintainer's automation builds and publishes the English
+  pack, adds the update's new lines to `translations/en/`, translates them for each
+  published language (French today), commits them here, and re-runs the two steps
+  above plus the `cache_md5` stamp below. Only the language text follows on its own:
+  translated images and the PC UI prefabs still need a manual rebuild.
 - **English cache:** `version.json` must carry a top-level `cache_md5` (the md5 of
   `translation_cache.json`). The app re-downloads its cache only when that stamp
   changes, so a cache uploaded without it never reaches the phones that have one.

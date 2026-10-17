@@ -196,9 +196,15 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Pu
   `locales.json`) names the launcher: `Play-in-French.cmd`.
 - The installer scripts themselves (`tools/pc/*.ps1`, `MT.EnPatch.psm1`) must be on
   the release too: older copies ignore everything but the language bundle.
-- The app hides a language's Download once the game updates (the patch's
-  `stock_md5` no longer matches the release's), leaving Auto-patch.
-- `update_translation.py` rewrites `version.json` on every English release, which
-  drops the `locales` block, the `images` keys and `cache_md5`. Re-run
-  `Publish-Locale.ps1` and `publish_android_images.py` for each language afterwards,
-  and put back `cache_md5` (see the main README's Releasing section).
+- After a game update, a language's ready-made patch no longer fits the game: the
+  app's **Install** notices it (it compares the tables' row ids) and builds the
+  translation on the phone instead.
+- After a game update the maintainer's automation adds the update's new lines to
+  `en/` as released, translates them into each published language, commits them
+  here and re-runs `Publish-Locale.ps1`, so French follows each update. A new line
+  that fails its checks stays in English until someone fixes it by hand.
+- The older `update_translation.py` rewrites `version.json` from scratch, which drops
+  the `locales` block, the `images` keys and `cache_md5`; `update_pipeline.py` keeps
+  them. After a release made with the older script, re-run `Publish-Locale.ps1` and
+  `publish_android_images.py` for each language and put back `cache_md5` (see the
+  main README's Releasing section).

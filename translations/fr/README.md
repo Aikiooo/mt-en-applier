@@ -34,6 +34,19 @@ passent pas par le cache — ils sont cuits dans les bundles de l'interface par
 `tools/prefab-patch/build_prefab_patch.py` et `build_inapp.py`, avec le cache
 français et `prefab/ui-prefab.json`.
 
+## Mises à jour du jeu
+
+À chaque mise à jour du jeu, l'automatisation du mainteneur ajoute les nouvelles
+lignes japonaises à `../en/` (telles que publiées en anglais), puis les traduit en
+français en suivant ce README (conventions, caractères, glossaire). Elle vérifie
+chaque ligne (balises recopiées, pas de japonais restant, pas de `œ` ni d'espace
+insécable), les range dans le fichier de thème correspondant de `source/` (ou de
+`hand/`), en fait un commit, puis republie le patch français. Une ligne qui échoue
+aux vérifications reste en anglais jusqu'à une correction à la main.
+
+Ces lignes sont traduites automatiquement : relire le commit de chaque mise à jour
+et corriger ici ce qui sonne faux, comme pour n'importe quelle ligne.
+
 ## Caractères
 
 Les polices du jeu (atlas TextMeshPro figés) ont tous les accents, `« »`, `’` et `…`,
