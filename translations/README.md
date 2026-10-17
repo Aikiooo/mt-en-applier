@@ -111,9 +111,11 @@ tutorial captions) are redrawn per language in `translations/<code>/textures/`:
 The same folder feeds both platforms:
 
 - **PC:** `build_prefab_patch.py --textures translations/<code>/textures` (DXT).
-- **Android:** `build_android_images.py --locale <code>` (ASTC 6×6), published with
-  `publish_android_images.py`. The app offers images for a language once its
-  `images` keys are on the release, and installs them only when the player turns on
+- **Android:** `build_android_prefabs.py --locale <code>` (ASTC 6×6, from the Android
+  CDN stock, with the menu text of `prefab/ui-prefab.json` and the language's cache),
+  published with `publish_android_images.py --kind prefabs images`. The app offers
+  menus and images for a language once their keys are on the release; menus install
+  unless the player turns them off, images only when the player turns on
   **Translated images**.
 
 Details: [`tools/prefab-patch/README.md`](../tools/prefab-patch/README.md#textures).

@@ -50,6 +50,10 @@ You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/de
   the new game version is out yet, Install builds the translation on the phone in a
   few seconds instead (Auto-patch; only brand-new text stays Japanese). The **?**
   next to Install explains this in the app.
+- **Translated menus** (on by default): Install also translates the text built into
+  the game's screens (menus, buttons, windows: about 7,000 labels), in the chosen
+  language (about 35 MB). Turn the **Translated menus** switch off and Install puts
+  the Japanese ones back.
 - **Translated images** (opt-in): turn on the **Translated images** switch and the
   next Install also replaces the buttons, banners and logos that have Japanese
   lettering, in the chosen language (about 17 MB).
@@ -145,8 +149,8 @@ patch over each, and checks the size on the device.
   (offsets from `version.json`), decrypts the new bundle, overlays the translation
   cache and rebuilds it on the phone (`core/AutoPatcher`). The status card shows its
   progress. Details below.
-- **Translated images** (opt-in) overwrite the game's cached image bundles with the
-  release's per-language build. Details below.
+- **Translated menus** (on by default) and **translated images** (opt-in) overwrite
+  the game's cached UI bundles with the release's per-language build. Details below.
 
 **The shell can overwrite the game's cache files but not delete them.** The cache
 folders are `drwxr-s---` (owner: the game, group `ext_data_rw`) and the files
@@ -182,17 +186,27 @@ When a translated table is too long for its ciphertext, rows go back to Japanese
 longest first. The patcher sizes that by arithmetic (the plaintext length is the sum
 of its rows) and encrypts once, so the whole patch takes about half a second on a PC.
 
-**Translated images.** The game caches its image bundles like the language pack, at
-`UnityCache/Shared/<name folder>/<version folder>/__data`. The name folder is the same
-as on PC; only the version folder differs. Android textures are ASTC 6×6.
-`android-images-<code>.zip` on the release holds each patched bundle under its name
-folder plus a manifest with its stock (`src_md5`) and patched (`out_md5`) md5. The
-app overwrites a cached copy only when it is stock or a bundle it wrote itself (any
-language), so switching languages works and a bundle the game updated stays
-Japanese. Switching to a language without images, or with the switch off, takes
-away the previous language's images rather than mixing them. Built by
-[`tools/prefab-patch/build_android_images.py`](tools/prefab-patch/build_android_images.py);
-see [`tools/prefab-patch/README.md`](tools/prefab-patch/README.md#android-images).
+**Translated menus and images.** The game caches its UI bundles like the language
+pack, at `UnityCache/Shared/<name folder>/<version folder>/__data`. The name folder is
+the same as on PC; only the version folder differs. Two zips per language on the
+release, each holding the patched bundles under their name folder plus a manifest with
+the stock (`src_md5`) and patched (`out_md5`) md5:
+
+- `android-prefabs-<code>.zip`: the text built into 243 UI prefabs (TextMeshPro `m_text`),
+  the same ~7,270 strings as the PC patch. Installed unless the player turns
+  **Translated menus** off.
+- `android-images-<code>.zip`: 113 bundles with redrawn textures (ASTC 6×6). The 3 of
+  them that also carry menu text have the text too, so the image copy replaces the
+  text copy instead of undoing it. Installed when **Translated images** is on.
+
+The app installs menus first, then images. It overwrites a cached copy only when it is
+stock or a bundle it wrote itself (either kind, any language), so switching languages
+works and a bundle the game updated stays Japanese. Switching to a language without a
+kind, or turning menus off, takes the previous copy away rather than mixing languages.
+**Remove translated images** puts the text-only copy back on the 3 shared bundles.
+Both zips are built from the game's Android CDN stock by
+[`tools/prefab-patch/build_android_prefabs.py`](tools/prefab-patch/build_android_prefabs.py);
+see [`tools/prefab-patch/README.md`](tools/prefab-patch/README.md#android-menus-and-images).
 - **Update check** looks for the highest `vX.Y.Z` GitHub release carrying `MT-EN-Applier.apk`.
 
 The APK contains no game data and no encryption keys.
@@ -235,13 +249,15 @@ or users can't update over their installed copy.
 - **Other languages:** [`tools/translations/Publish-Locale.ps1`](tools/translations/Publish-Locale.ps1)
   (see [`translations/README.md`](translations/README.md#publishing-a-language-to-the-app)).
   Re-run it after each English release, which rewrites `version.json`.
-- **Android images:** [`tools/prefab-patch/publish_android_images.py`](tools/prefab-patch/publish_android_images.py)
-  `--locale <code> --publish` (English included). Re-run it after each English release too.
+- **Android menus and images:** [`tools/prefab-patch/publish_android_images.py`](tools/prefab-patch/publish_android_images.py)
+  `--locale <code> --kind prefabs images --publish` (English included). Re-run it after
+  each English release too.
 - **After a game update:** the maintainer's automation builds and publishes the English
   pack, adds the update's new lines to `translations/en/`, translates them for each
   published language (French today), commits them here, and re-runs the two steps
-  above plus the `cache_md5` stamp below. Only the language text follows on its own:
-  translated images and the PC UI prefabs still need a manual rebuild.
+  above plus the `cache_md5` stamp below. It then rebuilds the iOS patch and the
+  Android menus and images from the new CDN stock and publishes them. The PC UI
+  prefabs and images still need a manual rebuild.
 - **English cache:** `version.json` must carry a top-level `cache_md5` (the md5 of
   `translation_cache.json`). The app re-downloads its cache only when that stamp
   changes, so a cache uploaded without it never reaches the phones that have one.

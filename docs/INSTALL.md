@@ -58,6 +58,9 @@ The app tells you when a newer version of itself is out ("Get update").
   phone builds the translation from the new Japanese data in a few seconds instead
   (only brand-new text stays Japanese). If it asks you to, open the game once to the
   title screen, close it, and tap **Install** again.
+- **Translated menus:** on by default. Install also translates the text built into
+  the game's screens (menus, buttons, windows; about 35 MB). Turn **Translated menus**
+  off and tap **Install** again to put the Japanese ones back.
 - **Translated images (optional):** turn on **Translated images**, then tap
   **Install** again: buttons, banners and logos with Japanese lettering are replaced
   too (about 17 MB).

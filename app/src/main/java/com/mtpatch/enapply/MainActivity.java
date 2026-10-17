@@ -138,6 +138,12 @@ public class MainActivity extends Activity {
     private static final String PREF_IMAGES_WRITTEN = "images_written";
     /** Name folders of the image bundles of the installed set (comma-separated). */
     private static final String PREF_IMAGES_BUNDLES = "images_bundles";
+    /** Translated menu text (UI prefabs), on unless the player turned it off. */
+    private static final String PREF_PREFABS = "prefabs_on";
+    /** The same three as for the images, for the menu-text bundles. */
+    private static final String PREF_PREFABS_LANG = "prefabs_lang";
+    private static final String PREF_PREFABS_WRITTEN = "prefabs_written";
+    private static final String PREF_PREFABS_BUNDLES = "prefabs_bundles";
     private static final String STAGED_CUSTOM = "custom";
 
     /** Languages published on the release (English first), from version.json. */
@@ -154,9 +160,9 @@ public class MainActivity extends Activity {
     private ProgressBar progressBar;
     private View statusDotView;
     private ObjectAnimator dotPulse;
-    private LinearLayout imagesRow;
-    private Switch imagesSwitch;
-    private TextView imagesHint;
+    private LinearLayout imagesRow, prefabsRow;
+    private Switch imagesSwitch, prefabsSwitch;
+    private TextView imagesHint, prefabsHint;
     private Button removeImagesBtn;
     private GradientDrawable statusDot;
     private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, shizukuGithubBtn, autoBtn, resetBtn;
@@ -385,45 +391,20 @@ public class MainActivity extends Activity {
         langLp.topMargin = dp(8);
         root.addView(langRow, langLp);
 
-        // ---- translated images: opt-in, shown once the release publishes any ----
-        imagesRow = new LinearLayout(this);
-        imagesRow.setOrientation(LinearLayout.HORIZONTAL);
-        imagesRow.setGravity(Gravity.CENTER_VERTICAL);
-        imagesRow.setPadding(dp(14), dp(10), dp(10), dp(10));
-        imagesRow.setBackground(rounded(C_SURFACE, C_STROKE, 12));
-        LinearLayout imgTexts = new LinearLayout(this);
-        imgTexts.setOrientation(LinearLayout.VERTICAL);
-        TextView imgLabel = new TextView(this);
-        imgLabel.setText("Translated images");
-        imgLabel.setTextSize(15);
-        imgLabel.setTextColor(C_TEXT);
-        imgTexts.addView(imgLabel);
-        imagesHint = new TextView(this);
-        imagesHint.setTextSize(12);
-        imagesHint.setTextColor(C_TEXT_DIM);
-        imgTexts.addView(imagesHint);
-        imagesRow.addView(imgTexts, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        imagesSwitch = new Switch(this);
-        imagesSwitch.setThumbTintList(new ColorStateList(
-                new int[][]{{android.R.attr.state_checked}, {}}, new int[]{C_ACCENT, C_TEXT_DIM}));
-        imagesSwitch.setTrackTintList(new ColorStateList(
-                new int[][]{{android.R.attr.state_checked}, {}}, new int[]{0x804F8EF7, C_STROKE}));
-        imagesSwitch.setChecked(prefs().getBoolean(PREF_IMAGES, false));
-        imagesSwitch.setOnCheckedChangeListener((b, on) -> {
-            if (on == prefs().getBoolean(PREF_IMAGES, false)) return;
-            prefs().edit().putBoolean(PREF_IMAGES, on).apply();
-            log(on ? "Translated images: on. They are installed with the next Install."
-                    : "Translated images: off. Images already installed stay until you tap "
-                            + "\"Remove translated images\" or switch language.");
-            refreshStatus();
-        });
-        imagesRow.addView(imagesSwitch);
-        imagesRow.setVisibility(View.GONE);
-        LinearLayout.LayoutParams imgLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        imgLp.topMargin = dp(8);
-        root.addView(imagesRow, imgLp);
+        // ---- translated menus (on by default) and images (opt-in), shown once published ----
+        prefabsRow = switchRow("Translated menus", PREF_PREFABS, true, on -> log(on
+                ? "Translated menus: on. They are installed with the next Install."
+                : "Translated menus: off. The next Install puts the Japanese menus back."));
+        prefabsHint = (TextView) prefabsRow.getTag();
+        prefabsSwitch = (Switch) prefabsRow.getChildAt(1);
+        root.addView(prefabsRow, rowLp());
+        imagesRow = switchRow("Translated images", PREF_IMAGES, false, on -> log(on
+                ? "Translated images: on. They are installed with the next Install."
+                : "Translated images: off. Images already installed stay until you tap "
+                        + "\"Remove translated images\" or switch language."));
+        imagesHint = (TextView) imagesRow.getTag();
+        imagesSwitch = (Switch) imagesRow.getChildAt(1);
+        root.addView(imagesRow, rowLp());
 
         // ---- actions (the whole screen scrolls) ----
         LinearLayout actions = new LinearLayout(this);
@@ -706,6 +687,15 @@ public class MainActivity extends Activity {
             progressBar.setIndeterminate(progressPct < 0);
             if (progressPct >= 0) progressBar.setProgress(progressPct);
 
+            boolean anyPrefabs = false;
+            for (PatchLanguage l : languages) anyPrefabs |= l.hasPrefabs();
+            prefabsRow.setVisibility(anyPrefabs ? View.VISIBLE : View.GONE);
+            prefabsSwitch.setEnabled(!busy);
+            prefabsHint.setText(lang.hasPrefabs()
+                    ? "Menus, buttons and windows · " + (lang.prefabsSize > 0
+                            ? String.format(Locale.US, "%.0f MB", lang.prefabsSize / 1e6) : "download")
+                    : "None for " + lang.name + " yet");
+
             boolean anyImages = false;
             for (PatchLanguage l : languages) anyImages |= l.hasImages();
             imagesRow.setVisibility(anyImages ? View.VISIBLE : View.GONE);
@@ -920,7 +910,7 @@ public class MainActivity extends Activity {
             texts.addView(name);
             TextView sub = new TextView(this);
             sub.setText((l.downloadable() ? "Ready-made download" : "Built on this phone with Auto-patch")
-                    + (l.hasImages() ? " · images" : ""));
+                    + (l.hasPrefabs() ? " · menus" : "") + (l.hasImages() ? " · images" : ""));
             sub.setTextSize(12);
             sub.setTextColor(C_TEXT_DIM);
             texts.addView(sub);
@@ -1099,6 +1089,51 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    /** A setting row: label, hint (the row's tag) and a switch bound to a boolean pref. */
+    private LinearLayout switchRow(String label, String pref, boolean def,
+                                   java.util.function.Consumer<Boolean> onChange) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(14), dp(10), dp(10), dp(10));
+        row.setBackground(rounded(C_SURFACE, C_STROKE, 12));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        TextView name = new TextView(this);
+        name.setText(label);
+        name.setTextSize(15);
+        name.setTextColor(C_TEXT);
+        texts.addView(name);
+        TextView hint = new TextView(this);
+        hint.setTextSize(12);
+        hint.setTextColor(C_TEXT_DIM);
+        texts.addView(hint);
+        row.setTag(hint);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        Switch sw = new Switch(this);
+        sw.setThumbTintList(new ColorStateList(
+                new int[][]{{android.R.attr.state_checked}, {}}, new int[]{C_ACCENT, C_TEXT_DIM}));
+        sw.setTrackTintList(new ColorStateList(
+                new int[][]{{android.R.attr.state_checked}, {}}, new int[]{0x804F8EF7, C_STROKE}));
+        sw.setChecked(prefs().getBoolean(pref, def));
+        sw.setOnCheckedChangeListener((b, on) -> {
+            if (on == prefs().getBoolean(pref, def)) return;
+            prefs().edit().putBoolean(pref, on).apply();
+            onChange.accept(on);
+            refreshStatus();
+        });
+        row.addView(sw);
+        row.setVisibility(View.GONE);
+        return row;
+    }
+
+    private LinearLayout.LayoutParams rowLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        return lp;
+    }
+
     private TextView sectionCaption(String text) {
         TextView t = captionText(text);
         t.setPadding(dp(2), dp(20), 0, dp(2));
@@ -1194,8 +1229,8 @@ public class MainActivity extends Activity {
                         + "own Japanese text, in a few seconds (Auto-patch). Text the translation "
                         + "doesn't cover yet stays Japanese until a new patch is out.\n\n"
                         + "Tap Install again after each game update: the game replaces the patch "
-                        + "when it downloads new data. Translated images, when turned on, are "
-                        + "installed with it.",
+                        + "when it downloads new data. Translated menus (on unless you turn them "
+                        + "off) and translated images (when turned on) are installed with it.",
                 null, null, null, "Close");
     }
 
@@ -1485,7 +1520,7 @@ public class MainActivity extends Activity {
                 log("✓ " + what + " installed to " + okCount
                         + (okCount == 1 ? " cache location (" : " cache locations (")
                         + fmtBytes(len) + (okCount == 1 ? ")." : " each)."));
-                syncImages(stagedLang != null ? stagedLang : selectedLanguage(), 0, 100);
+                syncUi(stagedLang != null ? stagedLang : selectedLanguage(), 0, 100);
                 log("Launch the game. Tap Install again after each game update.");
                 doneLabel = "Patch installed";
                 ui.post(() -> uninstallBtn.setVisibility(View.VISIBLE));
@@ -1799,16 +1834,45 @@ public class MainActivity extends Activity {
         }
     }
 
-    // ---------------- translated images ----------------
-    // The game caches its image bundles like the language pack:
-    // UnityCache/Shared/<name folder>/<version folder>/__data. The release zip
+    // ---------------- translated menus and images ----------------
+    // The game caches its UI bundles like the language pack:
+    // UnityCache/Shared/<name folder>/<version folder>/__data. A release zip
     // holds, per language, each patched bundle under its name folder plus a
     // manifest (src_md5 = stock, out_md5 = ours); see tools/prefab-patch/
-    // build_android_images.py. A cached bundle is overwritten only when it is
-    // stock or one this app wrote, so a game update leaves new bundles alone.
+    // build_android_prefabs.py. Two kinds: the menu text baked into the UI
+    // prefabs (on by default) and the redrawn images (opt-in). An image bundle
+    // that also has menu text carries both, so the image copy replaces the text
+    // copy. A cached bundle is overwritten only when it is stock or one this app
+    // wrote (either kind), so a game update leaves new bundles alone.
 
     private static final String GAME_SHARED =
             "/sdcard/Android/data/" + GAME_PKG + "/files/UnityCache/Shared/";
+
+    /** One kind of UI bundle zip and the prefs that track it. */
+    private static final class UiKind {
+        final String id, what, prefLang, prefWritten, prefBundles;
+
+        UiKind(String id, String what, String prefLang, String prefWritten, String prefBundles) {
+            this.id = id;
+            this.what = what;
+            this.prefLang = prefLang;
+            this.prefWritten = prefWritten;
+            this.prefBundles = prefBundles;
+        }
+
+        String asset(PatchLanguage l) {
+            return this == PREFABS ? l.prefabsAsset : l.imagesAsset;
+        }
+
+        String md5(PatchLanguage l) {
+            return this == PREFABS ? l.prefabsMd5 : l.imagesMd5;
+        }
+    }
+
+    private static final UiKind PREFABS = new UiKind("prefabs", "menus",
+            PREF_PREFABS_LANG, PREF_PREFABS_WRITTEN, PREF_PREFABS_BUNDLES);
+    private static final UiKind IMAGES = new UiKind("images", "images",
+            PREF_IMAGES_LANG, PREF_IMAGES_WRITTEN, PREF_IMAGES_BUNDLES);
 
     private static Set<String> csvSet(String csv) {
         Set<String> out = new java.util.HashSet<>();
@@ -1816,16 +1880,29 @@ public class MainActivity extends Activity {
         return out;
     }
 
-    /** After a language is installed: that language's images when the player
-     *  opted in, else take away images of another language (never a mix). */
-    private void syncImages(PatchLanguage lang, int p0, int p1) {
+    /** After a language is installed: its menus unless the player turned them off,
+     *  its images when the player opted in; never a mix of languages. */
+    private void syncUi(PatchLanguage lang, int p0, int p1) {
+        int mid = (p0 + p1) / 2;
+        try {
+            boolean on = prefs().getBoolean(PREF_PREFABS, true);
+            if (on && lang.hasPrefabs()) {
+                installUi(PREFABS, lang, p0, mid);
+            } else if (!prefs().getString(PREF_PREFABS_LANG, "").isEmpty()) {
+                log(on ? "Removing the translated menus of the previous language."
+                        : "Translated menus are off: putting the Japanese menus back.");
+                removeUi(PREFABS);
+            }
+        } catch (Throwable t) {
+            log("⚠ Menus not updated (" + t.getMessage() + "). The text patch is installed.");
+        }
         try {
             String installed = prefs().getString(PREF_IMAGES_LANG, "");
             if (prefs().getBoolean(PREF_IMAGES, false) && lang.hasImages()) {
-                installImages(lang, p0, p1);
+                installUi(IMAGES, lang, mid, p1);
             } else if (!installed.isEmpty() && !installed.equals(lang.code)) {
                 log("Removing the translated images of the previous language.");
-                removeImages();
+                removeUi(IMAGES);
             }
         } catch (Throwable t) {
             log("⚠ Images not updated (" + t.getMessage() + "). The text patch is installed.");
@@ -1833,7 +1910,7 @@ public class MainActivity extends Activity {
     }
 
     /** "md5  name/version/__data" for every cached copy of the given bundles. */
-    private Map<String, String> cachedImageMd5s(java.util.Collection<String> names) throws Exception {
+    private Map<String, String> cachedMd5s(java.util.Collection<String> names) throws Exception {
         Map<String, String> out = new java.util.LinkedHashMap<>();
         List<String> all = new ArrayList<>(names);
         for (int i = 0; i < all.size(); i += 40) {
@@ -1848,21 +1925,21 @@ public class MainActivity extends Activity {
         return out;
     }
 
-    private void installImages(PatchLanguage lang, int p0, int p1) throws Exception {
+    private void installUi(UiKind kind, PatchLanguage lang, int p0, int p1) throws Exception {
         int span = p1 - p0;
-        progress(p0, "Downloading the translated images");
-        File zip = appFile("images-" + lang.code + ".zip");
-        if (!zip.exists() || !lang.imagesMd5.equalsIgnoreCase(md5Of(zip))) {
-            Downloader.fetchToFile(RELEASE_BASE + lang.imagesAsset, zip, s -> {});
-            if (!lang.imagesMd5.equalsIgnoreCase(md5Of(zip))) {
+        progress(p0, "Downloading the translated " + kind.what);
+        File zip = appFile(kind.id + "-" + lang.code + ".zip");
+        if (!zip.exists() || !kind.md5(lang).equalsIgnoreCase(md5Of(zip))) {
+            Downloader.fetchToFile(RELEASE_BASE + kind.asset(lang), zip, s -> {});
+            if (!kind.md5(lang).equalsIgnoreCase(md5Of(zip))) {
                 zip.delete();
-                throw new Exception("image download corrupted, retry");
+                throw new Exception(kind.what + " download corrupted, retry");
             }
         }
 
         // unpack next to it (the shell uid copies from there)
-        progress(p0 + span / 4, "Unpacking the images");
-        File dir = appFile("images-" + lang.code);
+        progress(p0 + span / 4, "Unpacking the " + kind.what);
+        File dir = appFile(kind.id + "-" + lang.code);
         File[] old = dir.listFiles();
         if (old != null) for (File f : old) f.delete();
         dir.mkdirs();
@@ -1879,7 +1956,7 @@ public class MainActivity extends Activity {
                 }
             }
         }
-        if (manifest == null) throw new Exception("image zip has no manifest");
+        if (manifest == null) throw new Exception(kind.what + " zip has no manifest");
 
         Map<String, String[]> wanted = new java.util.LinkedHashMap<>();   // name -> {src, out}
         for (int i = 0; i < manifest.length(); i++) {
@@ -1890,14 +1967,17 @@ public class MainActivity extends Activity {
                         e.getString("out_md5").toLowerCase(Locale.US)});
         }
 
-        // overwrite every cached copy that is stock or ours; keep its __info valid
-        progress(p0 + span / 2, "Installing the images");
-        Set<String> ours = csvSet(prefs().getString(PREF_IMAGES_WRITTEN, ""));
+        // overwrite every cached copy that is stock or ours (menus or images); keep its __info valid
+        progress(p0 + span / 2, "Installing the " + kind.what);
+        Set<String> ours = csvSet(prefs().getString(kind.prefWritten, ""));
         for (String[] so : wanted.values()) ours.add(so[1]);
+        Set<String> anyOurs = new java.util.HashSet<>(ours);
+        anyOurs.addAll(csvSet(prefs().getString(PREF_PREFABS_WRITTEN, "")));
+        anyOurs.addAll(csvSet(prefs().getString(PREF_IMAGES_WRITTEN, "")));
         List<String> cmds = new ArrayList<>();
         Set<String> done = new java.util.HashSet<>();
         Set<String> seen = new java.util.HashSet<>();
-        for (Map.Entry<String, String> c : cachedImageMd5s(wanted.keySet()).entrySet()) {
+        for (Map.Entry<String, String> c : cachedMd5s(wanted.keySet()).entrySet()) {
             String rel = c.getKey(), md5 = c.getValue();
             String name = rel.substring(0, rel.indexOf('/'));
             String[] so = wanted.get(name);
@@ -1906,10 +1986,10 @@ public class MainActivity extends Activity {
             String info = GAME_SHARED + rel.substring(0, rel.lastIndexOf('/')) + "/__info";
             String fixInfo = "[ -s '" + info + "' ] || printf '%s\\n%s\\n1\\n__data\\n' -1 \"$(date +%s)\" > '" + info + "'";
             if (md5.equals(so[1])) {
-                cmds.add(fixInfo + "; echo 'IMG_OK " + name + "'");
-            } else if (md5.equals(so[0]) || ours.contains(md5)) {
+                cmds.add(fixInfo + "; echo 'UI_OK " + name + "'");
+            } else if (md5.equals(so[0]) || anyOurs.contains(md5)) {
                 cmds.add("cp '" + new File(dir, name).getAbsolutePath() + "' '" + GAME_SHARED + rel
-                        + "' && echo 'IMG_OK " + name + "'; " + fixInfo);
+                        + "' && echo 'UI_OK " + name + "'; " + fixInfo);
             }
             // anything else is a game build we don't know (an older copy the game no longer
             // loads, or a newer one): leave it as it is
@@ -1917,22 +1997,22 @@ public class MainActivity extends Activity {
         for (int i = 0; i < cmds.size(); i += 25) {
             String out = shell(String.join("; ", cmds.subList(i, Math.min(cmds.size(), i + 25)))).out;
             for (String line : out.split("\n"))
-                if (line.trim().startsWith("IMG_OK ")) done.add(line.trim().substring(7));
+                if (line.trim().startsWith("UI_OK ")) done.add(line.trim().substring(6));
             progress(p0 + span / 2 + (span / 2) * Math.min(cmds.size(), i + 25) / Math.max(1, cmds.size()),
-                    "Installing the images");
+                    "Installing the " + kind.what);
         }
         for (File f : dir.listFiles()) f.delete();   // the zip stays, for the next switch
         dir.delete();
 
         prefs().edit()
-                .putString(PREF_IMAGES_LANG, lang.code)
-                .putString(PREF_IMAGES_WRITTEN, String.join(",", ours))
-                .putString(PREF_IMAGES_BUNDLES, String.join(",", wanted.keySet()))
+                .putString(kind.prefLang, lang.code)
+                .putString(kind.prefWritten, String.join(",", ours))
+                .putString(kind.prefBundles, String.join(",", wanted.keySet()))
                 .apply();
-        // counted per image set, not per cached copy: old game versions leave extra copies
+        // counted per bundle, not per cached copy: old game versions leave extra copies
         int notCached = wanted.size() - seen.size();
         int foreign = seen.size() - done.size();
-        log("✓ Translated images: " + done.size() + " of " + wanted.size() + " image sets in " + lang.name
+        log("✓ Translated " + kind.what + ": " + done.size() + " of " + wanted.size() + " bundles in " + lang.name
                 + (foreign > 0 ? ", " + foreign + " left as they are (changed by a game update)" : "")
                 + (notCached > 0 ? ", " + notCached + " not downloaded by the game yet" : "") + ".");
     }
@@ -1945,27 +2025,28 @@ public class MainActivity extends Activity {
         return bo.toByteArray();
     }
 
-    /** Back to the Japanese images: blank the __info of every bundle we wrote,
-     *  so the game downloads the stock one at next launch (we can't delete). */
-    private int removeImages() throws Exception {
-        Set<String> names = csvSet(prefs().getString(PREF_IMAGES_BUNDLES, ""));
-        Set<String> ours = csvSet(prefs().getString(PREF_IMAGES_WRITTEN, ""));
+    /** Back to the Japanese bundles of one kind: blank the __info of every bundle
+     *  we wrote, so the game downloads the stock one at next launch (we can't delete).
+     *  A bundle that now holds the other kind's copy is left alone. */
+    private int removeUi(UiKind kind) throws Exception {
+        Set<String> names = csvSet(prefs().getString(kind.prefBundles, ""));
+        Set<String> ours = csvSet(prefs().getString(kind.prefWritten, ""));
         List<String> cmds = new ArrayList<>();
-        for (Map.Entry<String, String> c : cachedImageMd5s(names).entrySet()) {
+        for (Map.Entry<String, String> c : cachedMd5s(names).entrySet()) {
             if (!ours.contains(c.getValue())) continue;
             String rel = c.getKey();
             String info = GAME_SHARED + rel.substring(0, rel.lastIndexOf('/')) + "/__info";
-            cmds.add(": > '" + info + "' && echo 'IMG_RESET'");
+            cmds.add(": > '" + info + "' && echo 'UI_RESET'");
         }
         int n = 0;
         for (int i = 0; i < cmds.size(); i += 25) {
             for (String line : shell(String.join("; ", cmds.subList(i, Math.min(cmds.size(), i + 25)))).out.split("\n"))
-                if (line.trim().equals("IMG_RESET")) n++;
+                if (line.trim().equals("UI_RESET")) n++;
         }
-        prefs().edit().putString(PREF_IMAGES_LANG, "").apply();
-        log(n > 0 ? "Removed the translated images from " + n + " bundle" + (n == 1 ? "" : "s")
+        prefs().edit().putString(kind.prefLang, "").apply();
+        log(n > 0 ? "Removed the translated " + kind.what + " from " + n + " bundle" + (n == 1 ? "" : "s")
                 + ": the game downloads the Japanese ones at next launch."
-                : "No translated images installed.");
+                : "No translated " + kind.what + " installed.");
         return n;
     }
 
@@ -1979,7 +2060,10 @@ public class MainActivity extends Activity {
             try {
                 section("Remove translated images");
                 shell("am force-stop " + GAME_PKG);
-                removeImages();
+                removeUi(IMAGES);
+                // the image bundles that also carry menu text: put the text-only copy back
+                PatchLanguage menus = PatchLanguage.find(languages, prefs().getString(PREF_PREFABS_LANG, ""));
+                if (menus != null && menus.hasPrefabs()) installUi(PREFABS, menus, 0, 100);
             } catch (Throwable t) {
                 log("✗ Couldn't remove the images: " + t.getMessage());
             } finally {
@@ -2293,7 +2377,7 @@ public class MainActivity extends Activity {
             if (!rr.out.contains("CP_OK"))
                 throw new AutoPatchFail("could not write " + shortPath(dest) + rr.reason() + ".");
         }
-        syncImages(lang, 93, 99);
+        syncUi(lang, 93, 99);
         progress(100, "Installed");
         log("✓ Auto-patch installed to " + dests.size()
                 + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");

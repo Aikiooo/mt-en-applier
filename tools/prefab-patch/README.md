@@ -67,37 +67,59 @@ as they are.
 
 Tested in-game on client 1.2.0 (2026-10-16), with the same builds byte for byte.
 
-## Android images
+## Android menus and images
 
-The Android client caches the same image bundles, under the same name folder
-(`UnityCache/Shared/<name folder>/`); only the version folder differs. 137 of the
-textures above are there (all but `TitleLogo_01`), as **ASTC 6×6 without mips**, and `textures.set_textures`
-re-encodes them in that format (UnityPy with `astc_encoder`). The game doesn't
-CRC-check these bundles on Android: the patched files load as they are.
+The Android client caches the same UI bundles, under the same name folder
+(`UnityCache/Shared/<name folder>/`); only the version folder differs. So the text
+and textures above apply as they are: 243 bundles with prefab text, 113 with textures
+(137 textures, all but `TitleLogo_01`), 3 with both. Android textures are **ASTC 6×6
+without mips**, and `textures.set_textures` re-encodes them in that format (UnityPy
+with `astc_encoder`).
 
-`build_android_images.py` builds one zip per language from **stock** Android bundles:
+`build_android_prefabs.py` builds both from the **Android CDN stock**, the way
+`tools/ios/build_ios_patch.py` does for iOS. No phone is needed:
 
 ```powershell
-# stock bundles, one file per name folder (pull them from a phone that never had images installed)
-adb shell 'cd /sdcard/Android/data/jp.gree_ent.mushoku/files/UnityCache/Shared; for d in <name folders>; do cp "$(ls -t $d/*/__data | head -1)" /data/local/tmp/ab/$d; done'
-adb pull /data/local/tmp/ab ..\mt_db\build\android_image_stock
+# inputs from patch-latest: which bundles to patch, and each language's cache
+gh release download patch-latest --repo Aikiooo/mt-en-applier -D build\android-release --clobber `
+  -p prefab-patch.zip -p prefab-images.zip -p translation_cache.json -p translation_cache.fr.json
 
-py -I -X utf8 tools\prefab-patch\build_android_images.py --stock ..\mt_db\build\android_image_stock --locale fr
-py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr            # dry run
-py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr --publish
+py -I -X utf8 tools\prefab-patch\build_android_prefabs.py --locale en fr --release-dir build\android-release `
+  --base-url https://mushokutensei-coe-jp.akamaized.net/production/client/<build>/6000.0.68f1/AssetBundle/Android
+py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr --kind prefabs images            # dry run
+py -I -X utf8 tools\prefab-patch\publish_android_images.py --locale fr --kind prefabs images --publish
 ```
 
-- The name folders are the first part of each `rel` in `build/prefab-patch/manifest.json`.
-- Output: `build/android-images-<locale>.zip`, about 17 MB: `manifest.json`
-  (`bundle`, `src_md5`, `out_md5`, `size`, `textures`) and one patched bundle per name
-  folder. Builds are deterministic.
-- `TitleLogo_01` is reported as missing: on Android it lives in the in-app bundle,
-  inside the game's APK.
-- The publisher uploads the zip, then merges `images`, `images_md5` and `images_size`
-  into `version.json` (top level for English, `locales.<code>` otherwise).
+- `<build>` is the client build (the roll version); the CDN and Unity folders are the
+  `CDN` / `UNITY` constants of `mt_db/scripts/cdn_update.py`. Stock bundles are cached
+  in `build/android-stock/<catalog hash>/`.
+- The bundle list is the name folders of the PC `prefab-patch.zip` and
+  `prefab-images.zip` (the first part of each `rel`). A bundle missing from the
+  Android catalog is listed in the summary.
+- Output, per language, in `build/`:
+  - `android-prefabs-<code>.zip`, about 35 MB: the text only, 243 bundles,
+    7,268 text fields (client 202610081009578fd70).
+  - `android-images-<code>.zip`, about 17 MB: the textures, 113 bundles. The 3 that
+    also have text carry it too, so installing images over menus keeps the menus.
+  - `android-ui-<code>.json`: client build, catalog hash, md5s, untranslated strings.
+  - Each zip: `manifest.json` (`bundle`, `src_md5`, `out_md5`, `size`, `text_fields`,
+    `textures`) and one patched bundle per name folder.
+- Builds are deterministic (two builds from the same stock are byte-identical).
+- **CRC.** On Android the catalog sets `m_UseCrcForCachedBundles` on 153 bundles, none
+  of them one of these 353, so the game loads a patched cached copy as it is (as the
+  images already showed on phones). Each patched bundle still gets the catalog's CRC
+  back (`unityfs.forge`, as for iOS), so it would load even if a later catalog
+  started checking it. The summary lists any of them the catalog checks.
+- The publisher uploads the zips, then merges `prefabs` / `prefabs_md5` /
+  `prefabs_size` and `images` / `images_md5` / `images_size` into `version.json` (top
+  level for English, `locales.<code>` otherwise). `--kind images` alone is the old
+  behaviour.
 - The app writes a cached bundle only when its md5 is the manifest's `src_md5` or one
-  it wrote itself. After a game update changes a bundle, that bundle stays Japanese
-  until the zip is rebuilt from the new stock.
+  it wrote itself (menus or images). After a game update changes a bundle, that bundle
+  stays Japanese until the zips are rebuilt from the new stock: the mtcoe roll's
+  `android` step does that after each game update.
+- `build_android_images.py` (images only, from bundles pulled from a phone) is the
+  previous builder, kept for a stock folder at hand.
 
 ## Build (maintainer, after each game update)
 

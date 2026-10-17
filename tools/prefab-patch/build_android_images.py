@@ -1,5 +1,8 @@
 """Android image patch: the redrawn textures, re-encoded into the game's Android bundles.
 
+Superseded by build_android_prefabs.py, which builds the same zip (plus the menu text)
+from the game's CDN instead of bundles pulled from a phone. Kept for a stock folder at hand.
+
 The Android client caches the same bundles as PC under the same name folder
 (UnityCache/Shared/<name hash>/<version hash>/__data); only the version folder
 differs. Its textures are ASTC 6x6 without mips, which textures.set_image keeps.

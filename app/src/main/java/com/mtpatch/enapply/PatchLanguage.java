@@ -21,12 +21,14 @@ import java.util.regex.Pattern;
  *     "patch": "__data.es", "patch_size": 1898964, "patch_md5": "…",   (optional)
  *     "stock_md5": "…",                                                (optional)
  *     "images": "android-images-es.zip", "images_md5": "…",            (optional)
- *     "images_size": 17332846
+ *     "images_size": 17332846,
+ *     "prefabs": "android-prefabs-es.zip", "prefabs_md5": "…",          (optional)
+ *     "prefabs_size": 41000000
  *   }
  * }
  * </pre>
  *
- * English's images use the same three keys at the top level.
+ * English's images and prefabs use the same keys at the top level.
  *
  * Only languages present in version.json are offered, so an unpublished
  * locale never surfaces in the app.
@@ -56,11 +58,16 @@ final class PatchLanguage {
     final String imagesAsset;
     final String imagesMd5;
     final long imagesSize;
+    /** Release asset of the translated UI prefab text (zip), or null. */
+    final String prefabsAsset;
+    final String prefabsMd5;
+    final long prefabsSize;
 
     private PatchLanguage(String code, String name, String patchAsset, long patchSize,
                           String patchMd5, String cacheAsset, String cacheMd5,
                           String builtAt, String stockMd5, boolean patchCurrent,
-                          String imagesAsset, String imagesMd5, long imagesSize) {
+                          String imagesAsset, String imagesMd5, long imagesSize,
+                          String prefabsAsset, String prefabsMd5, long prefabsSize) {
         this.code = code;
         this.name = name;
         this.patchAsset = patchAsset;
@@ -74,11 +81,19 @@ final class PatchLanguage {
         this.imagesAsset = imagesAsset;
         this.imagesMd5 = imagesMd5;
         this.imagesSize = imagesSize;
+        this.prefabsAsset = prefabsAsset;
+        this.prefabsMd5 = prefabsMd5;
+        this.prefabsSize = prefabsSize;
     }
 
     /** Translated images are published for this language. */
     boolean hasImages() {
         return imagesAsset != null && !imagesMd5.isEmpty();
+    }
+
+    /** Translated menu text (UI prefabs) is published for this language. */
+    boolean hasPrefabs() {
+        return prefabsAsset != null && !prefabsMd5.isEmpty();
     }
 
     boolean isDefault() {
@@ -105,7 +120,8 @@ final class PatchLanguage {
                 parseLong(str(v, "patch_size")), str(v, "patch_md5"),
                 "translation_cache.json", str(v, "cache_md5"),
                 str(v, "built_at"), str(v, "stock_md5"), true,
-                safeAsset(str(v, "images")), str(v, "images_md5"), parseLong(str(v, "images_size")));
+                safeAsset(str(v, "images")), str(v, "images_md5"), parseLong(str(v, "images_size")),
+                safeAsset(str(v, "prefabs")), str(v, "prefabs_md5"), parseLong(str(v, "prefabs_size")));
     }
 
     /** English first, then every published locale in version.json order. */
@@ -135,7 +151,8 @@ final class PatchLanguage {
                     patch.isEmpty() ? null : patch, parseLong(str(m, "patch_size")),
                     str(m, "patch_md5"), cache, str(m, "cache_md5"),
                     str(m, "built_at"), stock, current,
-                    safeAsset(str(m, "images")), str(m, "images_md5"), parseLong(str(m, "images_size"))));
+                    safeAsset(str(m, "images")), str(m, "images_md5"), parseLong(str(m, "images_size")),
+                    safeAsset(str(m, "prefabs")), str(m, "prefabs_md5"), parseLong(str(m, "prefabs_size"))));
         }
         return out;
     }
