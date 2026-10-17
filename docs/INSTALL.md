@@ -56,8 +56,8 @@ The app tells you when a newer version of itself is out ("Get update").
 - **After a game update**, the game may re-download the Japanese file. Open the app
   and tap **Install** again. If no patch for the new game version is out yet, the
   phone builds the translation from the new Japanese data in a few seconds instead
-  (only brand-new text stays Japanese). It may open the game for a moment to get the
-  Japanese data back; leave it until it comes back to the app.
+  (only brand-new text stays Japanese). If it asks you to, open the game once to the
+  title screen, close it, and tap **Install** again.
 - **Translated images (optional):** turn on **Translated images**, then tap
   **Install** again: buttons, banners and logos with Japanese lettering are replaced
   too (about 17 MB).

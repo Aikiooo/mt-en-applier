@@ -134,7 +134,7 @@ folders are `drwxr-s---` (owner: the game, group `ext_data_rw`) and the files
 To make the game download a bundle again, the app empties that entry's `__info`
 (Unity's cache record, `-1 / timestamp / 1 / __data`): Unity then treats the entry
 as not cached and downloads it at next launch. Reset, Remove translated images and
-Auto-patch's re-download all work this way.
+Auto-patch's "open the game once" fallback all work this way.
 
 **Auto-patch always translates from Japanese.** The translation cache matches
 Japanese text, so patching an already patched bundle changes almost nothing. Before
@@ -143,12 +143,12 @@ patching, it counts the Japanese text cells of the source (`AutoPatcher.Result
 
 1. It keeps a copy of the Japanese bundle whenever it sees one (`original_ja.__data`
    in the app's files, also taken by Install before it overwrites the stock bundle).
-2. When the game holds a patch this app installed, it starts from that copy, if the
-   copy is the bundle that patch was built from.
-3. Otherwise it empties the language entries' `__info`, opens the game, waits for
-   Unity to write the fresh Japanese bundle (its `__info` comes back), closes the
-   game and patches that. If the game doesn't download it within two minutes, it
-   asks the player to open the game once and retry.
+2. When the game holds a patch (this app's or another), it starts from that copy if
+   the copy holds the same table rows as the game's pack, i.e. the same game version
+   (`AutoPatcher.rowIds`; row ids don't depend on the language).
+3. Otherwise it empties the language entries' `__info` and asks the player to open
+   the game once (it downloads its Japanese pack), close it and tap Install again.
+   The app never opens the game by itself.
 
 **Install falls back to Auto-patch after a game update.** Before copying, Install
 decrypts the patch and the game's live language pack and compares the row ids of

@@ -1718,7 +1718,7 @@ public class MainActivity extends Activity {
     /** doAutoPatch with its failures logged. */
     private void runAutoPatch() {
         try {
-            doAutoPatch(false);
+            doAutoPatch();
         } catch (AutoPatchFail f) {
             log("✗ Auto-patch failed: " + f.getMessage());
             log(AUTO_PATCH_ADVICE);
@@ -2021,18 +2021,21 @@ public class MainActivity extends Activity {
         return false;
     }
 
-    /** Whether the saved original is intact and is the pack the live patch was
-     *  built from (an original of an older game version must not be used). */
-    private boolean originalMatches(String liveMd5) throws Exception {
-        String orig = prefs().getString(PREF_ORIGINAL_MD5, "");
-        if (orig.isEmpty() || !originalJa().exists() || !orig.equalsIgnoreCase(md5Of(originalJa())))
+    /** Whether the saved Japanese copy is intact and holds the same rows as the
+     *  game's pack (the same game version), whatever language that pack is in. */
+    private boolean originalFits(File live, byte[][] k, List<String> names) {
+        try {
+            String orig = prefs().getString(PREF_ORIGINAL_MD5, "");
+            File o = originalJa();
+            if (orig.isEmpty() || !o.exists() || !orig.equalsIgnoreCase(md5Of(o))) return false;
+            progress(8, "Checking the saved Japanese pack");
+            return AutoPatcher.rowIds(java.nio.file.Files.readAllBytes(o.toPath()), k[0], k[1], names,
+                            (pct, phase) -> {})
+                    .equals(AutoPatcher.rowIds(java.nio.file.Files.readAllBytes(live.toPath()), k[0], k[1],
+                            names, (pct, phase) -> {}));
+        } catch (Throwable t) {
             return false;
-        if (liveMd5.equalsIgnoreCase(prefs().getString(PREF_AUTOPATCH_MD5, "")))
-            return orig.equalsIgnoreCase(prefs().getString(PREF_AUTOPATCH_BASE, ""));
-        for (PatchLanguage l : languages)
-            if (!l.patchMd5.isEmpty() && liveMd5.equalsIgnoreCase(l.patchMd5))
-                return orig.equalsIgnoreCase(l.stockMd5);
-        return false;
+        }
     }
 
     private void keepOriginal(File japanese, String md5) {
@@ -2076,51 +2079,31 @@ public class MainActivity extends Activity {
         return n;
     }
 
-    /** The game holds a patch and no matching Japanese original is saved: open
-     *  the game briefly so it downloads the Japanese pack, then close it.
-     *  True once Unity has written a fresh entry (its __info is back). */
-    private boolean fetchJapanese() throws Exception {
-        log("The game has a patched language pack, and Auto-patch translates from the Japanese one. "
-                + "Opening the game briefly so it downloads it again…");
-        progress(10, "Getting the Japanese pack from the game");
-        if (invalidateLangPacks() == 0) return false;
-        shell("monkey -p " + GAME_PKG + " -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1");
-        String ready = "";
-        long deadline = System.currentTimeMillis() + 120_000;
-        while (ready.isEmpty() && System.currentTimeMillis() < deadline) {
-            Thread.sleep(2000);
-            ready = shell("for f in " + GAME_CACHE_GLOB + "; do [ -s \"${f%/__data}/__info\" ] "
-                    + "&& echo \"READY:$f\"; done").out;
-        }
-        if (ready.contains("READY:")) Thread.sleep(2000);   // let Unity finish closing the file
-        shell("am force-stop " + GAME_PKG);
-        try {
-            startActivity(new Intent(this, MainActivity.class)
-                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
-        } catch (Throwable ignored) {
-            // closing the game usually brings us back anyway
-        }
-        return ready.contains("READY:");
-    }
-
-    /** Opening the game didn't bring a fresh pack (no network, a dialog in the way). */
-    private void askToOpenGame() {
-        log("The game didn't download its Japanese pack in time.");
-        log("→ Open the game until the title screen, close it, then tap Auto-patch again.");
+    /** No Japanese pack to translate from: the game holds a patch, and no saved
+     *  Japanese copy matches this game version. Mark the pack for re-download and
+     *  let the player open the game; the app never launches it by itself. */
+    private void needJapanese() throws Exception {
+        int n = invalidateLangPacks();
+        log("Auto-patch translates from the game's Japanese text, but the game holds a patch"
+                + " and this phone has no Japanese copy for this game version.");
+        log(n > 0 ? "→ Open the game until the title screen (it downloads its Japanese text),"
+                + " close it, then tap Install again."
+                : "→ Tap Delete all language packs, open the game until the title screen,"
+                + " close it, then tap Install again.");
         doneLabel = null;
         ui.post(this::showRedownloadDialog);
     }
 
     private void showRedownloadDialog() {
         if (isFinishing()) return;
-        showSheet("One more step", "Auto-patch needs the game's Japanese language pack, and the game "
-                        + "didn't download it while it was open.\n\nOpen the game until the title "
-                        + "screen, close it, then come back and tap Auto-patch again. The app keeps "
-                        + "that Japanese pack, so switching languages later won't need this.",
-                null, "Launch game", this::launchGame, "Close");
+        showSheet("One more step", "Building the translation needs the game's Japanese text, "
+                        + "and the game currently holds a patch.\n\nOpen the game until the title "
+                        + "screen so it downloads its Japanese text, close it, then come back and tap "
+                        + "Install again. The app keeps a copy, so you won't need this again until "
+                        + "the next game update.",
+                null, null, null, "OK");
     }
 
-    /** @param retried true on the second pass, after the game re-downloaded Japanese. */
     /** Names of the language pack's tables (bundled asset). */
     private List<String> tableNames() throws java.io.IOException {
         List<String> names = new ArrayList<>();
@@ -2190,9 +2173,8 @@ public class MainActivity extends Activity {
         return keys;
     }
 
-    private void doAutoPatch(boolean retried) throws Exception {
-        if (!retried) section("Auto-patch");
-        else log("The game downloaded its Japanese pack. Patching from it…");
+    private void doAutoPatch() throws Exception {
+        section("Auto-patch");
         progress(0, "Reading the game files");
         shell("am force-stop " + GAME_PKG);
 
@@ -2247,14 +2229,13 @@ public class MainActivity extends Activity {
         // 5. known table names (bundled asset)
         List<String> names = tableNames();
 
-        // 6. start from the Japanese original: a pack this app installed is a
-        // patch, so use the saved original it was built from, if any.
+        // 6. translate from Japanese. A patch in the game's pack is no use: take the
+        // saved Japanese copy when it holds the same rows (the same game version).
         String liveMd5 = md5Of(stockF).toLowerCase(Locale.US);
         File srcF = stockF;
         if (isKnownPatch(liveMd5)) {
-            if (!originalMatches(liveMd5)) {
-                if (!retried && fetchJapanese()) doAutoPatch(true);
-                else askToOpenGame();
+            if (!originalFits(stockF, keys, names)) {
+                needJapanese();
                 return;
             }
             log("The game has a patch installed: starting from the saved Japanese pack.");
@@ -2263,21 +2244,28 @@ public class MainActivity extends Activity {
 
         // 7. patch fully on-device. Per-table notes stay out of the UI log;
         // only the summary below is shown.
-        byte[] stock = java.nio.file.Files.readAllBytes(srcF.toPath());
+        byte[] stock;
         List<String> notes = new ArrayList<>();
         AutoPatcher.Result res;
-        try {
-            res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add,
-                    (pct, phase) -> progress(10 + pct * 80 / 100, phase));
-        } catch (IllegalStateException e) {
-            if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch());
-            throw e;
-        }
-        // Someone else's patch, or a saved copy that isn't Japanese after all.
-        if (!res.sourceIsJapanese()) {
-            if (srcF != stockF) prefs().edit().remove(PREF_ORIGINAL_MD5).apply();
-            if (!retried && fetchJapanese()) doAutoPatch(true);
-            else askToOpenGame();
+        while (true) {
+            stock = java.nio.file.Files.readAllBytes(srcF.toPath());
+            try {
+                res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add,
+                        (pct, phase) -> progress(10 + pct * 80 / 100, phase));
+            } catch (IllegalStateException e) {
+                if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch());
+                throw e;
+            }
+            if (res.sourceIsJapanese()) break;
+            // someone else's patch, or a saved copy that isn't Japanese after all
+            if (srcF != stockF) {
+                prefs().edit().remove(PREF_ORIGINAL_MD5).apply();
+            } else if (originalFits(stockF, keys, names)) {
+                log("The game's pack is already translated: starting from the saved Japanese pack.");
+                srcF = originalJa();
+                continue;
+            }
+            needJapanese();
             return;
         }
         if (srcF == stockF) keepOriginal(stockF, liveMd5);
