@@ -37,7 +37,7 @@ You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/de
 2. **Open the game once** to the title screen so it downloads its data, then close it.
 3. **Install `MT-EN-Applier.apk`** from the [latest release](https://github.com/Aikiooo/mt-en-applier/releases/latest)
    and allow the Shizuku permission when asked.
-4. Tap **Download latest patch**, then **Apply English patch**, then launch the game.
+4. Tap **Install English**, then launch the game.
 
 `INSTALL.md` on the release page walks through each step, including Shizuku's pairing.
 
@@ -45,15 +45,15 @@ You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/de
   APK. v2.4.0 moved to a permanent signing key, so Android can't install it over
   the old one. Your game and patch aren't affected, and later versions install
   over the top. The app now shows a **Get update** banner when a new version is out.
-- **After a game update:** open the app, **Download latest patch**, **Apply**. If no
-  patch for the new game version is out yet, **Auto-patch after update** rebuilds
-  the translation on the phone in a few seconds (only brand-new text stays
-  Japanese). Apply does this by itself when the published patch is older than the
-  game. Auto-patch also switches between languages: it always translates from the
-  game's Japanese text, and fetches it again by itself when a patch is installed.
+- **After a game update:** open the app and tap **Install** again. If no patch for
+  the new game version is out yet, Install builds the translation on the phone in a
+  few seconds instead (Auto-patch; only brand-new text stays Japanese). The **?**
+  next to Install explains this in the app.
 - **Translated images** (opt-in): turn on the **Translated images** switch and the
-  next Apply or Auto-patch also replaces the buttons, banners and logos that have
-  Japanese lettering, in the chosen language (about 17 MB).
+  next Install also replaces the buttons, banners and logos that have Japanese
+  lettering, in the chosen language (about 17 MB).
+- **Advanced:** **Rebuild on this phone (Auto-patch)** forces the on-phone build, and
+  **Install a __data file…** installs a patch file you picked.
 - **Back to Japanese:** **Delete all language packs (reset)** for the text and
   **Remove translated images** for the images; the game re-downloads the Japanese
   files at next launch.
@@ -118,7 +118,9 @@ service. It force-stops the game, finds every live language bundle (`__data`) un
 folder changes with updates, and a mirror lives under `files/il2cpp/`), copies the
 patch over each, and checks the size on the device.
 
-- **Download** reads `version.json` on `patch-latest` and verifies the patch's size and md5.
+- **Install** reads `version.json` on `patch-latest`, downloads the selected language's
+  patch and verifies its size and md5, checks it against the game (below) and copies
+  it. With no patch published for the language, or none that fits, it runs Auto-patch.
 - **Auto-patch** takes the AES keys from the game's own `global-metadata.dat`
   (offsets from `version.json`), decrypts the new bundle, overlays the translation
   cache and rebuilds it on the phone (`core/AutoPatcher`). The status card shows its
@@ -140,7 +142,7 @@ patching, it counts the Japanese text cells of the source (`AutoPatcher.Result
 .sourceIsJapanese()`: the stock bundle is ~99% Japanese, a patched one ~0%):
 
 1. It keeps a copy of the Japanese bundle whenever it sees one (`original_ja.__data`
-   in the app's files, also taken by Apply before it overwrites the stock bundle).
+   in the app's files, also taken by Install before it overwrites the stock bundle).
 2. When the game holds a patch this app installed, it starts from that copy, if the
    copy is the bundle that patch was built from.
 3. Otherwise it empties the language entries' `__info`, opens the game, waits for
@@ -148,11 +150,11 @@ patching, it counts the Japanese text cells of the source (`AutoPatcher.Result
    game and patches that. If the game doesn't download it within two minutes, it
    asks the player to open the game once and retry.
 
-**Apply falls back to Auto-patch after a game update.** Before installing, Apply
+**Install falls back to Auto-patch after a game update.** Before copying, Install
 decrypts the patch and the game's live language pack and compares the row ids of
 every table (`AutoPatcher.rowIds`, about a second on a phone). Row ids are the same
 in every language, so they differ only when the game data changed: then the game
-has updated since the patch was published, and Apply runs Auto-patch instead of
+has updated since the patch was published, and Install runs Auto-patch instead of
 installing a patch that lacks the new rows. File sizes can't tell this: a patch
 doesn't have to keep the stock size.
 

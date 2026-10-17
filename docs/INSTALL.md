@@ -39,13 +39,13 @@ Shizuku lets the installer app write into the game's data folder without root.
 
 ---
 
-## Step 3 — Download and apply
+## Step 3 — Install the translation
 
 1. Open **MT-EN Applier**. If it says **"Shizuku not running"**, tap **Open Shizuku**
    and start it. Allow the permission prompt.
-2. Tap **"Download latest patch"**. It downloads and checks the file.
-3. Tap **"Apply English patch"** and wait for **"✓ English patch installed"**.
-4. Launch the game. Menus, skills, items and story are now in English.
+2. Tap **"Install English"** and wait for **"✓ English patch installed"**. It
+   downloads the latest patch, checks it against your game and installs it.
+3. Launch the game. Menus, skills, items and story are now in English.
 
 The app tells you when a newer version of itself is out ("Get update").
 
@@ -54,13 +54,12 @@ The app tells you when a newer version of itself is out ("Get update").
 ## Notes
 
 - **After a game update**, the game may re-download the Japanese file. Open the app
-  and tap **Download latest patch**, then **Apply**. If no patch for the new game
-  version is out yet, use **Auto-patch after update**: the phone rebuilds the
-  translation from the new Japanese data in a few seconds (only brand-new text stays
-  Japanese). If another language is installed, it may open the game for a moment to
-  get the Japanese data back; leave it until it comes back to the app.
-- **Translated images (optional):** turn on **Translated images**, then Apply or
-  Auto-patch again: buttons, banners and logos with Japanese lettering are replaced
+  and tap **Install** again. If no patch for the new game version is out yet, the
+  phone builds the translation from the new Japanese data in a few seconds instead
+  (only brand-new text stays Japanese). It may open the game for a moment to get the
+  Japanese data back; leave it until it comes back to the app.
+- **Translated images (optional):** turn on **Translated images**, then tap
+  **Install** again: buttons, banners and logos with Japanese lettering are replaced
   too (about 17 MB).
 - **Back to Japanese:** tap **Delete all language packs (reset)** for the text and
   **Remove translated images** for the images; the game re-downloads the Japanese

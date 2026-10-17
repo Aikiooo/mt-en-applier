@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
     private static final String APK_ASSET = "MT-EN-Applier.apk";
 
     private static final String AUTO_PATCH_ADVICE =
-            "Use \"Download latest patch\" once a build is published for this game version.";
+            "Tap Install again once a patch is published for this game version.";
 
     // ---------------- palette (dark) ----------------
     private static final int C_BG = 0xFF121417;
@@ -159,7 +159,7 @@ public class MainActivity extends Activity {
     private TextView imagesHint;
     private Button removeImagesBtn;
     private GradientDrawable statusDot;
-    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, shizukuGithubBtn, downloadBtn, autoBtn, resetBtn;
+    private Button applyBtn, uninstallBtn, pickBtn, shizukuBtn, shizukuGithubBtn, autoBtn, resetBtn;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private volatile IUserService service;
@@ -413,7 +413,7 @@ public class MainActivity extends Activity {
         imagesSwitch.setOnCheckedChangeListener((b, on) -> {
             if (on == prefs().getBoolean(PREF_IMAGES, false)) return;
             prefs().edit().putBoolean(PREF_IMAGES, on).apply();
-            log(on ? "Translated images: on. They are installed with the next Apply or Auto-patch."
+            log(on ? "Translated images: on. They are installed with the next Install."
                     : "Translated images: off. Images already installed stay until you tap "
                             + "\"Remove translated images\" or switch language.");
             refreshStatus();
@@ -454,33 +454,32 @@ public class MainActivity extends Activity {
         });
         actions.addView(shizukuGithubBtn);
 
-        applyBtn = makeButton("Apply English patch", BTN_PRIMARY, v -> onApply());
-        actions.addView(applyBtn);
-
-        downloadBtn = makeButton("Download latest patch", BTN_SECONDARY, v -> onDownload());
-        actions.addView(downloadBtn);
-
-        LinearLayout autoRow = new LinearLayout(this);
-        autoRow.setOrientation(LinearLayout.HORIZONTAL);
-        autoBtn = makeButton("Auto-patch after update", BTN_SECONDARY, v -> onAutoPatch());
-        LinearLayout.LayoutParams autoLp = new LinearLayout.LayoutParams(0, dp(48), 1f);
-        autoRow.addView(autoBtn, autoLp);
-        Button autoHelp = makeButton("?", BTN_SECONDARY, v -> showAutoPatchHelp());
-        autoHelp.setPadding(0, 0, 0, 0);
-        autoHelp.setTypeface(Typeface.DEFAULT_BOLD);
-        autoHelp.setContentDescription("What is Auto-patch?");
-        LinearLayout.LayoutParams helpLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        // One button does it all: download the published patch, check it against the
+        // game, and build the translation here (Auto-patch) when it doesn't fit.
+        LinearLayout installRow = new LinearLayout(this);
+        installRow.setOrientation(LinearLayout.HORIZONTAL);
+        applyBtn = makeButton("Install English", BTN_PRIMARY, v -> onInstall());
+        installRow.addView(applyBtn, new LinearLayout.LayoutParams(0, dp(56), 1f));
+        Button installHelp = makeButton("?", BTN_SECONDARY, v -> showInstallHelp());
+        installHelp.setPadding(0, 0, 0, 0);
+        installHelp.setTextSize(17);
+        installHelp.setTypeface(Typeface.DEFAULT_BOLD);
+        installHelp.setContentDescription("How does Install work?");
+        LinearLayout.LayoutParams helpLp = new LinearLayout.LayoutParams(dp(56), dp(56));
         helpLp.leftMargin = dp(8);
-        autoRow.addView(autoHelp, helpLp);
-        LinearLayout.LayoutParams autoRowLp = new LinearLayout.LayoutParams(
+        installRow.addView(installHelp, helpLp);
+        LinearLayout.LayoutParams installLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        autoRowLp.topMargin = dp(8);
-        actions.addView(autoRow, autoRowLp);
-
-        pickBtn = makeButton("Choose __data file…", BTN_SECONDARY, v -> openPicker());
-        actions.addView(pickBtn);
+        installLp.topMargin = dp(12);
+        actions.addView(installRow, installLp);
 
         actions.addView(sectionCaption("Advanced"));
+
+        autoBtn = makeButton("Rebuild on this phone (Auto-patch)", BTN_SECONDARY, v -> onAutoPatch());
+        actions.addView(autoBtn);
+
+        pickBtn = makeButton("Install a __data file…", BTN_SECONDARY, v -> openPicker());
+        actions.addView(pickBtn);
 
         resetBtn = makeButton("Delete all language packs (reset)", BTN_DANGER, v -> onResetLangPacks());
         actions.addView(resetBtn);
@@ -682,20 +681,14 @@ public class MainActivity extends Activity {
         ui.post(() -> {
             boolean connected = isConnected();
             boolean installed = isShizukuInstalled();
-            File patch = localPatch();
-            boolean fileThere = patch != null && patch.exists();
             PatchLanguage lang = selectedLanguage();
-            String staged = stagedLangCode();
-            boolean customFile = STAGED_CUSTOM.equals(staged);
-            // A staged file of another language must not be applied by mistake.
-            boolean havePatch = fileThere && (customFile || staged.equals(lang.code));
 
             // Language picker: hidden while only English is published.
             langRow.setVisibility(languages.size() > 1 ? View.VISIBLE : View.GONE);
             langRow.setEnabled(!busy);
             langRow.setAlpha(busy ? 0.5f : 1f);
             langValue.setText(lang.name + "  ▾");
-            langHint.setText(lang.downloadable() ? "" : "No ready-made download yet: use Auto-patch");
+            langHint.setText(lang.downloadable() ? "" : "Built on this phone: no ready-made download");
             langHint.setVisibility(lang.downloadable() ? View.GONE : View.VISIBLE);
 
             // Shizuku helpers: connected -> none; installed -> one "Open Shizuku";
@@ -704,11 +697,9 @@ public class MainActivity extends Activity {
             shizukuBtn.setText(installed ? "Open Shizuku" : "Get Shizuku (Play Store)");
             shizukuGithubBtn.setVisibility(!connected && !installed ? View.VISIBLE : View.GONE);
 
-            applyBtn.setText(customFile && fileThere ? "Apply chosen file"
-                    : lang.isDefault() ? "Apply English patch" : "Apply patch · " + lang.name);
-            applyBtn.setEnabled(!busy && connected && havePatch);
-            downloadBtn.setEnabled(!busy && lang.downloadable());
-            pickBtn.setEnabled(!busy);
+            applyBtn.setText("Install " + lang.name);
+            applyBtn.setEnabled(!busy && connected);
+            pickBtn.setEnabled(!busy && connected);
             resetBtn.setEnabled(!busy && connected);
             autoBtn.setEnabled(!busy && connected);
             progressBar.setVisibility(busy ? View.VISIBLE : View.GONE);
@@ -740,26 +731,15 @@ public class MainActivity extends Activity {
             } else if (busy) {
                 setStatus(C_ACCENT, busyLabel, progressPhase.isEmpty() ? "See the log below." : progressPhase);
             } else if (doneLabel != null) {
-                setStatus(C_OK, doneLabel, "Launch the game. Re-apply after each game update.");
+                setStatus(C_OK, doneLabel, "Launch the game. Tap Install again after each game update.");
             } else if (liveState(lang) == LIVE_PATCHED) {
                 setStatus(C_OK, "Patch installed", "Launch the game.");
             } else if (liveState(lang) == LIVE_OUTDATED) {
-                setStatus(C_WARN, "Older patch installed",
-                        "Tap Download latest patch, then Apply.");
+                setStatus(C_WARN, "Older patch installed", "Tap Install to update it.");
             } else if (liveState(lang) == LIVE_UPDATED) {
-                setStatus(C_WARN, "Game updated — patch not out yet",
-                        "Use Auto-patch, or wait for the new patch.");
-            } else if (havePatch) {
-                setStatus(C_OK, "Ready — tap Apply", "Patch file: "
-                        + (customFile ? "chosen file" : lang.name) + ", " + fmtBytes(patch.length()));
-            } else if (!lang.downloadable()) {
-                setStatus(C_WARN, "No " + lang.name + " download yet",
-                        "Use Auto-patch to build it on this phone.");
-            } else if (fileThere) {
-                setStatus(C_WARN, "No " + lang.name + " patch file yet",
-                        "Download it, or switch the patch language back.");
+                setStatus(C_WARN, "Game updated", "Tap Install to translate it again.");
             } else {
-                setStatus(C_WARN, "No patch file yet", "Download the latest patch or choose a __data file.");
+                setStatus(C_ACCENT, "Not installed yet", "Tap Install " + lang.name + ".");
             }
         });
     }
@@ -1203,21 +1183,19 @@ public class MainActivity extends Activity {
      *  can change) and only switches to the patched language pack once the title
      *  screen has loaded, so screens built before that, notably the loading tips,
      *  stay Japanese until the player returns to the title once. */
-    private void showAutoPatchHelp() {
+    private void showInstallHelp() {
         if (isFinishing()) return;
-        showSheet("Auto-patch",
-                "Builds the translation on this phone from the game's own Japanese text, "
-                        + "in a few seconds. It doesn't need a patch made for your game version.\n\n"
-                        + "When to use it:\n"
-                        + "• After a game update, before a new patch is published. Everything "
-                        + "already translated stays translated; only brand-new text stays Japanese "
-                        + "until the translation catches up. Apply does this by itself when the "
-                        + "downloaded patch is older than your game.\n"
-                        + "• For a language without a ready-made patch.\n\n"
-                        + "It always starts from the Japanese text. If a patch is installed, it uses "
-                        + "the Japanese copy it kept, or opens the game for a moment so it downloads "
-                        + "its Japanese text again.\n\n"
-                        + "Lines too long for the space the game allows are left in Japanese.",
+        showSheet("How Install works",
+                "1. It downloads the latest published patch for the language, if there is one.\n\n"
+                        + "2. It checks that patch against your game: the same tables, with the same "
+                        + "lines.\n\n"
+                        + "3. If your game updated since the patch was made, or no patch is published "
+                        + "for the language, it builds the translation on this phone from the game's "
+                        + "own Japanese text, in a few seconds (Auto-patch). Text the translation "
+                        + "doesn't cover yet stays Japanese until a new patch is out.\n\n"
+                        + "Tap Install again after each game update: the game replaces the patch "
+                        + "when it downloads new data. Translated images, when turned on, are "
+                        + "installed with it.",
                 null, null, null, "Close");
     }
 
@@ -1377,17 +1355,6 @@ public class MainActivity extends Activity {
 
     // ---------------- apply ----------------
 
-    private void onApply() {
-        if (!tryBegin("Applying patch…")) return;
-        new Thread(() -> {
-            try {
-                doApply();
-            } finally {
-                ui.post(this::end);
-            }
-        }, "apply").start();
-    }
-
     /** The staged copy (from the file picker). Lives on /sdcard (our external
      *  files dir) so the shell-uid Shizuku service can read it. */
     private File stagedPatch() {
@@ -1434,15 +1401,12 @@ public class MainActivity extends Activity {
                 }
                 out.flush();
                 setStagedLang(STAGED_CUSTOM);
-                long want = expectedPatchSize(selectedLanguage());
-                if (total != want) {
-                    log("Staged __data: " + fmtBytes(total) + " — expected " + fmtBytes(want)
-                            + ". Make sure it's the right file.");
-                } else if (isConnected()) {
-                    log("Staged __data (" + fmtBytes(total) + ") — tap Apply.");
-                } else {
-                    log("Staged __data (" + fmtBytes(total) + "). Connect Shizuku, then tap Apply.");
-                }
+                section("Install a file");
+                log("Read " + fmtBytes(total) + ".");
+                busyLabel = "Installing the file…";
+                doApply();
+                stagedPatch().delete();   // used once; Install downloads its own
+                setStagedLang(null);
             } catch (Throwable t) {
                 log("ERROR reading file: " + t.getMessage());
             } finally {
@@ -1457,10 +1421,9 @@ public class MainActivity extends Activity {
                 log("Shizuku is not connected. Start Shizuku, then reopen the app.");
                 return;
             }
-            section("Apply");
             File src = localPatch();
             if (src == null || !src.exists()) {
-                log("No patch file. Download it or choose a __data file.");
+                log("No patch file to install.");
                 return;
             }
             String stagedCode = stagedLangCode();
@@ -1477,14 +1440,17 @@ public class MainActivity extends Activity {
             // After a game update the downloaded patch lacks the new rows (and would
             // drop them): build the patch on the phone instead.
             Boolean fits = patchFitsGame(src);
-            if (Boolean.FALSE.equals(fits)) {
+            if (Boolean.FALSE.equals(fits) && stagedLang == null) {
+                log("⚠ This file doesn't match your game's current text (made for another game"
+                        + " version?). Installing it anyway.");
+            } else if (Boolean.FALSE.equals(fits)) {
                 log("Your game has newer text than this patch (it updated since the patch was made)."
                         + " Auto-patching instead.");
                 busyLabel = "Auto-patching…";
                 runAutoPatch();
                 return;
             }
-            if (fits == null) log("Couldn't compare the patch with your game; applying it as is.");
+            if (fits == null) log("Couldn't compare the patch with your game; installing it as is.");
 
             shell("am force-stop jp.gree_ent.mushoku");
             saveOriginalIfStock();
@@ -1520,7 +1486,7 @@ public class MainActivity extends Activity {
                         + (okCount == 1 ? " cache location (" : " cache locations (")
                         + fmtBytes(len) + (okCount == 1 ? ")." : " each)."));
                 syncImages(stagedLang != null ? stagedLang : selectedLanguage(), 0, 100);
-                log("Launch the game. Re-apply after each game update.");
+                log("Launch the game. Tap Install again after each game update.");
                 doneLabel = "Patch installed";
                 ui.post(() -> uninstallBtn.setVisibility(View.VISIBLE));
                 ui.post(() -> showInstalledDialog(what + " installed"));
@@ -1530,7 +1496,7 @@ public class MainActivity extends Activity {
                 log("✗ Copy failed. Retry, or check free space.");
             }
         } catch (Throwable t) {
-            log("✗ Apply failed: " + t.getMessage());
+            log("✗ Install failed: " + t.getMessage());
         }
     }
 
@@ -1652,55 +1618,77 @@ public class MainActivity extends Activity {
 
     // ---------------- download latest patch (P1) ----------------
 
-    private void onDownload() {
-        if (!tryBegin("Downloading…")) return;
+    /** Download the published patch, check it against the game and install it;
+     *  build the translation on the phone when there is none or it doesn't fit. */
+    private void onInstall() {
+        if (!isConnected()) {
+            log("Connect Shizuku first.");
+            return;
+        }
+        if (!tryBegin("Installing…")) return;
         new Thread(() -> {
             try {
-                section("Download");
-                saveVersion(Downloader.fetchString(VERSION_URL, s -> {}));
-                PatchLanguage lang = selectedLanguage();
-                if (!lang.downloadable()) {
-                    log("No ready-made " + lang.name + " patch for this game version yet.\n"
-                            + "Use Auto-patch to build it on this phone.");
-                    return;
-                }
-                long wantSize = lang.patchSize;
-                String wantMd5 = lang.patchMd5;
-                log("Latest " + lang.name + " patch: " + fmtBytes(wantSize) + ", built "
-                        + (lang.builtAt.isEmpty() ? "?" : lang.builtAt) + ".");
-                File staged = stagedPatch();
-                if (staged.exists() && wantMd5.equalsIgnoreCase(md5Of(staged))) {
-                    setStagedLang(lang.code);
-                    log("Already up to date.");
-                } else {
-                    Downloader.fetchToFile(lang.isDefault() ? DATA_URL : RELEASE_BASE + lang.patchAsset,
-                            staged, s -> {});
-                    String got = md5Of(staged);
-                    boolean badSize = wantSize > 0 && staged.length() != wantSize;
-                    if (!wantMd5.equalsIgnoreCase(got) || badSize) {
-                        // never leave a corrupt file staged under a language label
-                        staged.delete();
-                        setStagedLang(null);
-                        log("✗ Download corrupted (" + (badSize ? "size" : "md5") + " mismatch). Try again.");
-                        return;
-                    }
-                    setStagedLang(lang.code);
-                    log("✓ " + lang.name + " patch downloaded and verified.");
-                }
-                try {
-                    Downloader.fetchToFile(cacheUrl(lang), cacheFile(lang), s -> {});
-                    writeCacheStamp(lang);
-                } catch (Throwable t) {
-                    log("⚠ Translation cache not refreshed (" + t.getMessage() + ").");
-                }
-                log("Ready — tap Apply.");
-            } catch (Throwable t) {
-                log("✗ Download failed: " + t.getMessage()
-                        + "\nCheck your connection, or use \"Choose __data file…\".");
+                section("Install " + selectedLanguage().name);
+                if (downloadPatch()) doApply();
+                else runAutoPatch();
             } finally {
                 ui.post(this::end);
             }
-        }, "download").start();
+        }, "install").start();
+    }
+
+    /** Stage the selected language's published patch, verified. False when there is
+     *  none for this game version or it can't be fetched (then Auto-patch builds it). */
+    private boolean downloadPatch() {
+        progress(-1, "Checking for the latest patch");
+        File staged = stagedPatch();
+        PatchLanguage lang;
+        try {
+            saveVersion(Downloader.fetchString(VERSION_URL, s -> {}));
+            lang = selectedLanguage();
+        } catch (Throwable t) {
+            lang = selectedLanguage();
+            boolean have = lang.downloadable() && staged.exists() && lang.code.equals(stagedLangCode());
+            log("Offline (" + t.getMessage() + ")" + (have ? ": installing the patch downloaded earlier."
+                    : ": building the translation on this phone."));
+            return have;
+        }
+        if (!lang.downloadable()) {
+            log("No ready-made " + lang.name + " patch for this game version: building it on this phone.");
+            return false;
+        }
+        try {
+            log("Latest " + lang.name + " patch: built "
+                    + (lang.builtAt.isEmpty() ? "?" : lang.builtAt.replace('T', ' ')) + ".");
+            if (staged.exists() && lang.patchMd5.equalsIgnoreCase(md5Of(staged))) {
+                setStagedLang(lang.code);
+            } else {
+                progress(-1, "Downloading the " + lang.name + " patch");
+                Downloader.fetchToFile(lang.isDefault() ? DATA_URL : RELEASE_BASE + lang.patchAsset,
+                        staged, s -> {});
+                boolean badSize = lang.patchSize > 0 && staged.length() != lang.patchSize;
+                if (badSize || !lang.patchMd5.equalsIgnoreCase(md5Of(staged))) {
+                    // never leave a corrupt file staged under a language label
+                    staged.delete();
+                    setStagedLang(null);
+                    log("✗ Download corrupted (" + (badSize ? "size" : "md5") + " mismatch):"
+                            + " building the translation on this phone instead.");
+                    return false;
+                }
+                setStagedLang(lang.code);
+                log("✓ Downloaded and verified (" + fmtBytes(staged.length()) + ").");
+            }
+            try {
+                Downloader.fetchToFile(cacheUrl(lang), cacheFile(lang), s -> {});
+                writeCacheStamp(lang);
+            } catch (Throwable t) {
+                log("⚠ Translation cache not refreshed (" + t.getMessage() + ").");
+            }
+            return true;
+        } catch (Throwable t) {
+            log("✗ Download failed (" + t.getMessage() + "): building the translation on this phone.");
+            return false;
+        }
     }
 
     // ---------------- on-device auto-patch ----------------
