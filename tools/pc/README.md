@@ -145,7 +145,7 @@ That quirk is PC-fixable: `-WithAssets` rewrites both the cached UI prefabs and 
 
 ## After a game update
 
-A title-update usually refreshes the game's cached language bundle, wiping the patch. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then click Play in DMM again. With `-Prefabs`, re-run it the same way once the prefab build for the new game build is published: it only applies a build whose recorded game build matches, and reports the bundles the update replaced.
+A title-update usually refreshes the game's cached language bundle, wiping the patch. Just re-run `Install-EnPatch.ps1` (it re-downloads and re-seeds), then click Play in DMM again. With `-Prefabs`, the menus and images of an earlier language pack still go in: each bundle is installed only over the stock file it was built from, so the ones the update replaced are skipped and listed. Re-run it once the build for the new game build is published to get those too. The in-app (first load) build is the exception: it applies only to the exact stock file it was forged for.
 
 ## Uninstall (back to Japanese)
 

@@ -194,7 +194,12 @@ powershell -File tools\translations\Publish-Locale.ps1 -Locale es -Unpublish -Pu
   cache and game (`Install-PrefabPatch.ps1 -Restore` first): a bundle built from an
   already patched file is refused on every player's machine. They go under
   `locales.<code>.pc` as `prefab_patch`, `prefab_images` and `inapp`, and the
-  installer installs them exactly as it does English's. `label` (from
+  installer installs them exactly as it does English's. `prefab_patch` and
+  `prefab_images` built for an earlier pack are still offered (the installer and
+  `mt_launcher` skip each bundle a game update changed); `inapp` must target the
+  current game build and carry its `stock_md5`. Publish-Locale replaces the whole
+  `locales.<code>` block, so pass every PC piece on each call (the `mtcoe roll`
+  publish step does). `label` (from
   `locales.json`) names the launcher: `Play-in-French.cmd`.
 - The installer scripts themselves (`tools/pc/*.ps1`, `MT.EnPatch.psm1`) must be on
   the release too: older copies ignore everything but the language bundle.
