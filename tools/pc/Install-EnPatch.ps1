@@ -558,9 +558,13 @@ try {
 # --- 4. download + verify the patch -----------------------------------------
 $usePrefabs = $Prefabs -and [bool]$prefabPub
 $useInapp   = $FirstLoad -and [bool]$inappPub
-if ($usePrefabs -and $prefabPub.hash -and $gameHash -and $prefabPub.hash -ne $gameHash) {
-    Write-Host 'The prefab patch was built for another game build; skipping it. (Re-run after it is republished.)'
-    $usePrefabs = $false
+# Menus and images built for an earlier pack still go in: the prefab installer
+# skips each bundle a game update changed since (its src_md5 no longer matches).
+foreach ($p in @(@('menus', $prefabPub), @('images', $imagePub))) {
+    $h = Get-Prop $p[1] 'hash'
+    if ($h -and $gameHash -and $h -ne $gameHash) {
+        Write-Host "$($p[0]) were built for an earlier language pack ($($h.Substring(0, 8))); the bundles a game update changed since are skipped."
+    }
 }
 
 Write-Host "fetching the $($chosen.Name) patch from the patch-latest release ..."

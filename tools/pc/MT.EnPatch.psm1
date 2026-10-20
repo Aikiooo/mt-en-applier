@@ -195,9 +195,12 @@ function Get-PcLanguages {
         $label = Get-Prop $p.Value 'label'
         if (-not $label -or $label -notmatch '^[A-Za-z][A-Za-z]{0,31}$') { $label = $code }
         $assets = @{}
+        # Menus and images of an earlier pack still apply: each bundle in their
+        # manifest carries the stock md5 it was built from, and Install-PrefabPatch.ps1
+        # skips the ones a game update changed. The in-app build stays per game build.
         foreach ($k in @('prefab_patch', 'prefab_images', 'inapp')) {
             $a = Get-Prop $lpc $k
-            $assets[$k] = if (Test-AssetEntry $a $enHash) { $a } else { $null }
+            $assets[$k] = if (Test-AssetEntry $a $(if ($k -eq 'inapp') { $enHash } else { '' })) { $a } else { $null }
         }
         # The in-app build only works on the stock file it was forged for.
         if ($assets.inapp -and -not (Get-Prop $assets.inapp 'stock_md5')) { $assets.inapp = $null }
