@@ -9,7 +9,7 @@ iPhone / iPad and Windows (DMM).
   <a href="https://mtcoe.com/#/en-patch"><img src="https://img.shields.io/badge/%F0%9F%93%96%20Open%20the%20walkthrough-e0b44c?style=flat" alt="📖 Open the walkthrough" width="235"></a>
 </p>
 
-> **Last patch:** 2026-10-20 (v17). See [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
+> **Last patch:** 2026-10-29 (v18). See [patch-latest](https://github.com/Aikiooo/mt-en-applier/releases/tag/patch-latest) for the current build.
 
 ## Get the patch
 
