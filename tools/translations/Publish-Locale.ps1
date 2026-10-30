@@ -129,7 +129,10 @@ if ($PcPatchFile -and $BuildPcPatch) { Fail "use -PcPatchFile or -BuildPcPatch, 
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $versionPath = Join-Path $OutDir 'version.json'
-Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/version.json" -OutFile $versionPath
+# cache-bust: the CDN edge can still serve the previous release's version.json
+# for minutes after an English publish, and merging into that copy would
+# re-upload the old release over the new one.
+Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/version.json?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" -OutFile $versionPath
 $version = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 $cacheName = "translation_cache.$Locale.json"
