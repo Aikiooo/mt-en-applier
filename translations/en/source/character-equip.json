@@ -121,6 +121,7 @@
   "※獲得済みのため、そのキャラ専用の覚醒アイテムに変換されます。": "*Already owned; will be converted into an Awakening item exclusive to that character.",
   "★3や★4のキャラは覚醒Lvを上げていくと、レアリティがアップする。<br>すべてのキャラを★5にすることが可能だ。": "Raising the Awakening Lv. of ★3 and ★4 characters increases their rarity.<br>All characters can be raised to ★5.",
   "★{0}ピックアップキャラ": "★{0} Pickup Character",
+  "★{1}装備品を累計{0}個獲得する": "Obtain ★{1} Equipment items a total of {0} times",
   "☆4の装備の出現率がアップしている再加工です。": "A reprocessing with increased appearance rate for 4-star equipment.",
   "☆{1}装備品を累計{0}個獲得する": "Obtain a total of {0} ★{1} Equipment items",
   "☆{1}追憶を合計{0}回覚醒する": "Awaken ★{1} Recollections a total of {0} time(s)",

@@ -68,7 +68,7 @@ public class MainActivity extends Activity {
 
     /** Fallback only: the live patch_size comes from version.json (see
      *  expectedPatchSize()), so size changes never require an app update. */
-    private static final long DEFAULT_EXPECTED_SIZE = 1923067L;
+    private static final long DEFAULT_EXPECTED_SIZE = 1926449L;
 
     /** Fallback only: the live meta_key_off / meta_iv_off come from version.json.
      *  These move with game updates, so using them triggers a loud warning. */
