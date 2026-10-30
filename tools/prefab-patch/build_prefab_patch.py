@@ -69,7 +69,9 @@ def crc_checked_bundles(catalog_json):
     if not raw:
         return set()
     try:
-        text = base64.b64decode(raw).decode("utf-16-le", "ignore")
+        blob = base64.b64decode(raw)
+        # the options can start on an odd byte: read both alignments
+        text = blob.decode("utf-16-le", "ignore") + blob[1:].decode("utf-16-le", "ignore")
     except (ValueError, TypeError):
         return set()
     out = set()
