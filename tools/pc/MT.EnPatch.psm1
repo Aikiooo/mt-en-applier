@@ -31,7 +31,7 @@ $script:BootCfgRelPath  = 'mushoku_coe_cl_Data\boot.config'
 # per-user "LocalLow" folder, which has no reliable env var on every Windows
 # version, so candidate roots are globbed rather than built from $env:LOCALAPPDATA.
 $script:LangBundleGuid = 'cad73e991807559422ab03e01424a9d3'
-$script:LangBundleHash = '1254eaf10c2e39b7148951f4e1de3b6b'
+$script:LangBundleHash = '5854313c81de5288253b0cdf8319b72c'
 $script:LangBundleSize = 1926449
 $script:PatchDataDir = Join-Path $env:LOCALAPPDATA 'MT-EN-Applier\pc'
 
