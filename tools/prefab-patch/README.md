@@ -183,3 +183,27 @@ It refuses to publish the prefab zip unless every `src_md5` in `manifest.json` s
 matches the local cache (i.e. the build was made from the stock cache the players have),
 and it uploads `version.json` last so no installer sees a version.json that points at
 files which aren't uploaded yet.
+
+## PC menus and images without the game (`build_pc_prefabs.py`)
+
+`build_prefab_patch.py` reads the Unity cache, which only holds the screens the game has
+opened since an update. `build_pc_prefabs.py` does the same job from the CDN
+(`.../AssetBundle/StandaloneWindows64`), like the Android and iOS builds: it reads the build's
+`catalog_ja.json`, downloads only the bundles the previous menus/images manifests name plus every
+bundle whose (name, hash) is not in the previous catalog (kept in `build/pc-stock/catalogs`), checks
+each one's CRC against the catalog, and writes the same tree (`manifest.json`, `<name>/<hash>/__data`,
+`untranslated.json`, `crc-checked.json`, plus `source.json` with the client build).
+
+```
+py -I -X utf8 tools/prefab-patch/build_pc_prefabs.py --base-url <...>/StandaloneWindows64 `
+   --translation-cache <cache> --prev-manifest prefab-patch.zip prefab-images.zip --out build/prefab-patch-en
+```
+
+On 1.4.1 it gives the same manifest (371 bundles, 150 textures, same src/out md5) as the cache build.
+It misses only a new PNG whose bundle the update did not touch and the previous manifests did not
+name: the summary lists every texture placed nowhere (`TitleLogo_01` is expected, it is in the
+in-app bundle), and `--full-scan` reads all 7,470 bundles (6 GB) when that list looks wrong.
+
+`tools/pc/maintainer/Publish-PcPrefabs.ps1` zips a tree and publishes only `pc.prefab_patch` /
+`pc.prefab_images` of the live `version.json` for the live language hash. `mtcoe roll` runs both
+(`pcbuild` before `publish`, `pcpublish` after it; `roll.pcPrefabs` in `mt_db/scripts/mtcoe/config.json`).
