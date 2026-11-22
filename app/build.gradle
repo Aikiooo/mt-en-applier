@@ -62,4 +62,5 @@ dependencies {
     implementation 'org.lz4:lz4-java:1.8.0'
     // LZMA: the game's own bundles use LZMA blocks (flag 1) as well as LZ4.
     implementation 'org.tukaani:xz:1.10'
+    testImplementation 'junit:junit:4.13.2'
 }

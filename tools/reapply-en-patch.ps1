@@ -1,4 +1,4 @@
-<#
+﻿<#
   reapply-en-patch.ps1 — PC method (Method 2) for the Mushoku Tensei
   (Chronicle of Echoes) English patch. Works on:
     * Google Play Games PC emulator      (adb on localhost:6520, root)
@@ -144,13 +144,23 @@ if (-not $Patch) {
     Info 'downloading version.json + __data from the patch-latest release'
     try { $vj = Invoke-RestMethod -Uri ($REL + '/version.json') -UseBasicParsing -TimeoutSec 30 }
     catch { Fail ('Could not download version.json from ' + $REL + ' (' + $_.Exception.Message + ')') }
+    $expSize = if ($null -ne $vj.patch_size) { $vj.patch_size } elseif ($null -ne $vj.size) { $vj.size } else { $null }
+    $expMd5  = if ($vj.patch_md5) { [string]$vj.patch_md5 } elseif ($vj.md5) { [string]$vj.md5 } else { $null }
+    if ($null -eq $expSize -or [long]$expSize -le 0) { Fail 'version.json is missing patch_size; refusing unverified download. Try -Patch with a local file.' }
+    if (-not $expMd5 -or $expMd5 -notmatch '^[0-9a-fA-F]{32}$') { Fail 'version.json is missing a valid patch_md5; refusing unverified download. Try -Patch with a local file.' }
     $tmpPatch = Join-Path $env:TEMP 'mt_en___data'
     try { Invoke-WebRequest -Uri ($REL + '/__data') -OutFile $tmpPatch -UseBasicParsing -TimeoutSec 120 }
     catch { Fail ('Could not download __data from ' + $REL + ' (' + $_.Exception.Message + ')') }
     $dlLen = (Get-Item $tmpPatch).Length
-    if ($vj.size -and $dlLen -ne [long]$vj.size) { Fail ('Downloaded size ' + $dlLen + ' != expected ' + $vj.size + '. Try -Patch with a local file.') }
+    if ($dlLen -ne [long]$expSize) {
+        Remove-Item -LiteralPath $tmpPatch -Force -ErrorAction SilentlyContinue
+        Fail ('Downloaded size ' + $dlLen + ' != expected ' + $expSize + '. Try -Patch with a local file.')
+    }
     $dlMd5 = (Get-FileHash $tmpPatch -Algorithm MD5).Hash.ToLower()
-    if ($vj.md5 -and $dlMd5 -ne $vj.md5.ToLower()) { Fail ('Downloaded md5 ' + $dlMd5 + ' != expected ' + $vj.md5 + '. Try -Patch with a local file.') }
+    if ($dlMd5 -ne $expMd5.ToLower()) {
+        Remove-Item -LiteralPath $tmpPatch -Force -ErrorAction SilentlyContinue
+        Fail ('Downloaded md5 ' + $dlMd5 + ' != expected ' + $expMd5 + '. Try -Patch with a local file.')
+    }
     Ok ('downloaded patch (' + $dlLen + ' bytes, md5 verified)')
     $Patch = $tmpPatch
 } elseif (-not (Test-Path $Patch)) {

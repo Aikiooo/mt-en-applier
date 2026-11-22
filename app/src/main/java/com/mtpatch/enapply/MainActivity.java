@@ -551,6 +551,7 @@ public class MainActivity extends Activity {
         ui.postDelayed(new Runnable() {
             @Override
             public void run() {
+                if (isFinishing() || isDestroyed()) return;
                 if (Shizuku.pingBinder()) {
                     onShizukuReady();
                     return;
@@ -569,6 +570,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        ui.removeCallbacksAndMessages(null);
+        if (dotPulse != null) {
+            dotPulse.cancel();
+            dotPulse = null;
+        }
         try {
             Shizuku.removeRequestPermissionResultListener(permListener);
             Shizuku.removeBinderReceivedListener(binderReceivedListener);
@@ -737,6 +743,7 @@ public class MainActivity extends Activity {
     private void setBusy(boolean b) {
         busy = b;
         ui.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
             // a slow pulse on the status dot while something runs
             if (b && dotPulse == null) {
                 dotPulse = ObjectAnimator.ofFloat(statusDotView, View.ALPHA, 1f, 0.25f);
@@ -887,7 +894,7 @@ public class MainActivity extends Activity {
 
     private void showLanguagePicker() {
         List<PatchLanguage> langs = languages;
-        if (busy || langs.size() < 2) return;
+        if (isFinishing() || isDestroyed() || busy || langs.size() < 2) return;
         String current = selectedLanguage().code;
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
@@ -923,7 +930,7 @@ public class MainActivity extends Activity {
                 row.addView(check);
             }
             row.setOnClickListener(v -> {
-                sheet[0].dismiss();
+                if (sheet[0] != null) sheet[0].dismiss();
                 if (l.code.equals(current)) return;
                 prefs().edit().putString(PREF_LANG, l.code).apply();
                 doneLabel = null;
@@ -942,6 +949,7 @@ public class MainActivity extends Activity {
      *  primary may be null (then only the quiet secondary button shows). */
     private Dialog showSheet(String title, String message, View extra,
                              String primary, Runnable onPrimary, String secondary) {
+        if (isFinishing() || isDestroyed()) return null;
         Dialog d = new Dialog(this);
         d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
         LinearLayout box = new LinearLayout(this);
@@ -1219,7 +1227,7 @@ public class MainActivity extends Activity {
      *  screen has loaded, so screens built before that, notably the loading tips,
      *  stay Japanese until the player returns to the title once. */
     private void showInstallHelp() {
-        if (isFinishing()) return;
+        if (isFinishing() || isDestroyed()) return;
         showSheet("How Install works",
                 "1. It downloads the latest published patch for the language, if there is one.\n\n"
                         + "2. It checks that patch against your game: the same tables, with the same "
@@ -1235,7 +1243,7 @@ public class MainActivity extends Activity {
     }
 
     private void showInstalledDialog(String title) {
-        if (isFinishing()) return;
+        if (isFinishing() || isDestroyed()) return;
         showSheet(title, "Launch the game: menus, story and skills are now translated.\n\n"
                         + "Some text, like the loading tips, stays Japanese until you go back "
                         + "to the title screen once after starting the game. That text is built "
@@ -1714,8 +1722,7 @@ public class MainActivity extends Activity {
                 log("✓ Downloaded and verified (" + fmtBytes(staged.length()) + ").");
             }
             try {
-                Downloader.fetchToFile(cacheUrl(lang), cacheFile(lang), s -> {});
-                writeCacheStamp(lang);
+                fetchVerifiedCache(lang);
             } catch (Throwable t) {
                 log("⚠ Translation cache not refreshed (" + t.getMessage() + ").");
             }
@@ -1770,11 +1777,12 @@ public class MainActivity extends Activity {
      *  Row ids are the same in every language, so they tell game builds apart
      *  whatever the text. null when it can't be checked. */
     private Boolean patchFitsGame(File patch) {
+        File liveF = null;
         try {
             String live = newestLiveBundle();
             File dir = getExternalFilesDir(null);
             if (live == null || dir == null) return null;
-            File liveF = new File(dir, "live_check.__data");
+            liveF = new File(dir, "live_check.__data");
             if (!shell("cp '" + live + "' '" + liveF.getAbsolutePath() + "' && echo OK").out.contains("OK"))
                 return null;
             byte[][] k = gameKeys(dir);
@@ -1790,6 +1798,8 @@ public class MainActivity extends Activity {
             return game.equals(ours);
         } catch (Throwable t) {
             return null;
+        } finally {
+            if (liveF != null) liveF.delete();
         }
     }
 
@@ -1809,6 +1819,31 @@ public class MainActivity extends Activity {
         return null;
     }
 
+    /** Download a language's translation cache, verify cache_md5 if published,
+     *  replace the local file atomically, and record its release stamp. */
+    private void fetchVerifiedCache(PatchLanguage lang) throws Exception {
+        File cf = cacheFile(lang);
+        File dl = new File(cf.getParentFile(), cf.getName() + ".dl");
+        try {
+            Downloader.fetchToFile(cacheUrl(lang), dl, s -> {});
+            if (!lang.cacheMd5.isEmpty()) {
+                String got = md5Of(dl);
+                if (!lang.cacheMd5.equalsIgnoreCase(got)) {
+                    dl.delete();
+                    throw new java.io.IOException("translation cache MD5 mismatch (expected "
+                            + lang.cacheMd5 + ", got " + got + ")");
+                }
+            }
+            if (!dl.renameTo(cf)) {
+                java.nio.file.Files.move(dl.toPath(), cf.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            writeCacheStamp(lang);
+        } finally {
+            if (dl.exists()) dl.delete();
+        }
+    }
+
     /** Re-download the language's translation cache when it's missing or was
      *  fetched for an older release than the one version.json now reports. */
     private void ensureFreshCache(PatchLanguage lang) throws AutoPatchFail {
@@ -1822,13 +1857,16 @@ public class MainActivity extends Activity {
         boolean existed = cf.exists();
         if (existed && (want == null || want.equals(have))) return;
         try {
-            Downloader.fetchToFile(cacheUrl(lang), cf, s -> {});
-            writeCacheStamp(lang);
+            fetchVerifiedCache(lang);
             log(existed ? "Translation cache updated to the latest release." : "Translation cache downloaded.");
         } catch (Throwable t) {
-            if (existed) {
-                log("⚠ Couldn't refresh the translation cache; using the older copy.");
+            if (existed && cf.exists()) {
+                log("⚠ Couldn't refresh the translation cache (" + t.getMessage() + "); using the older copy.");
             } else {
+                String msg = t.getMessage();
+                if (msg != null && msg.contains("MD5 mismatch")) {
+                    throw new AutoPatchFail(msg + " — retry later.");
+                }
                 throw new AutoPatchFail("translation cache unavailable — connect to the internet and retry.");
             }
         }
@@ -1943,78 +1981,95 @@ public class MainActivity extends Activity {
         File[] old = dir.listFiles();
         if (old != null) for (File f : old) f.delete();
         dir.mkdirs();
-        org.json.JSONArray manifest = null;
-        try (java.util.zip.ZipInputStream zin = new java.util.zip.ZipInputStream(
-                new java.io.FileInputStream(zip))) {
-            java.util.zip.ZipEntry ze;
-            while ((ze = zin.getNextEntry()) != null) {
-                String n = ze.getName();
-                if (n.equals("manifest.json")) {
-                    manifest = new org.json.JSONArray(new String(readAll(zin), java.nio.charset.StandardCharsets.UTF_8));
-                } else if (n.matches("[0-9a-f]{32}")) {
-                    java.nio.file.Files.write(new File(dir, n).toPath(), readAll(zin));
+        try {
+            org.json.JSONArray manifest = null;
+            try (java.util.zip.ZipInputStream zin = new java.util.zip.ZipInputStream(
+                    new java.io.FileInputStream(zip))) {
+                java.util.zip.ZipEntry ze;
+                while ((ze = zin.getNextEntry()) != null) {
+                    String n = ze.getName();
+                    if (n.equals("manifest.json")) {
+                        manifest = new org.json.JSONArray(new String(readAll(zin), java.nio.charset.StandardCharsets.UTF_8));
+                    } else if (n.matches("[0-9a-f]{32}")) {
+                        java.nio.file.Files.write(new File(dir, n).toPath(), readAll(zin));
+                    }
                 }
             }
-        }
-        if (manifest == null) throw new Exception(kind.what + " zip has no manifest");
+            if (manifest == null) throw new Exception(kind.what + " zip has no manifest");
 
-        Map<String, String[]> wanted = new java.util.LinkedHashMap<>();   // name -> {src, out}
-        for (int i = 0; i < manifest.length(); i++) {
-            org.json.JSONObject e = manifest.getJSONObject(i);
-            String n = e.getString("bundle");
-            if (n.matches("[0-9a-f]{32}") && new File(dir, n).exists())
-                wanted.put(n, new String[]{e.getString("src_md5").toLowerCase(Locale.US),
-                        e.getString("out_md5").toLowerCase(Locale.US)});
-        }
-
-        // overwrite every cached copy that is stock or ours (menus or images); keep its __info valid
-        progress(p0 + span / 2, "Installing the " + kind.what);
-        Set<String> ours = csvSet(prefs().getString(kind.prefWritten, ""));
-        for (String[] so : wanted.values()) ours.add(so[1]);
-        Set<String> anyOurs = new java.util.HashSet<>(ours);
-        anyOurs.addAll(csvSet(prefs().getString(PREF_PREFABS_WRITTEN, "")));
-        anyOurs.addAll(csvSet(prefs().getString(PREF_IMAGES_WRITTEN, "")));
-        List<String> cmds = new ArrayList<>();
-        Set<String> done = new java.util.HashSet<>();
-        Set<String> seen = new java.util.HashSet<>();
-        for (Map.Entry<String, String> c : cachedMd5s(wanted.keySet()).entrySet()) {
-            String rel = c.getKey(), md5 = c.getValue();
-            String name = rel.substring(0, rel.indexOf('/'));
-            String[] so = wanted.get(name);
-            if (so == null) continue;
-            seen.add(name);
-            String info = GAME_SHARED + rel.substring(0, rel.lastIndexOf('/')) + "/__info";
-            String fixInfo = "[ -s '" + info + "' ] || printf '%s\\n%s\\n1\\n__data\\n' -1 \"$(date +%s)\" > '" + info + "'";
-            if (md5.equals(so[1])) {
-                cmds.add(fixInfo + "; echo 'UI_OK " + name + "'");
-            } else if (md5.equals(so[0]) || anyOurs.contains(md5)) {
-                cmds.add("cp '" + new File(dir, name).getAbsolutePath() + "' '" + GAME_SHARED + rel
-                        + "' && echo 'UI_OK " + name + "'; " + fixInfo);
+            Map<String, String[]> wanted = new java.util.LinkedHashMap<>();   // name -> {src, out}
+            for (int i = 0; i < manifest.length(); i++) {
+                org.json.JSONObject e = manifest.getJSONObject(i);
+                String n = e.getString("bundle");
+                if (n.matches("[0-9a-f]{32}") && new File(dir, n).exists())
+                    wanted.put(n, new String[]{e.getString("src_md5").toLowerCase(Locale.US),
+                            e.getString("out_md5").toLowerCase(Locale.US)});
             }
-            // anything else is a game build we don't know (an older copy the game no longer
-            // loads, or a newer one): leave it as it is
-        }
-        for (int i = 0; i < cmds.size(); i += 25) {
-            String out = shell(String.join("; ", cmds.subList(i, Math.min(cmds.size(), i + 25)))).out;
-            for (String line : out.split("\n"))
-                if (line.trim().startsWith("UI_OK ")) done.add(line.trim().substring(6));
-            progress(p0 + span / 2 + (span / 2) * Math.min(cmds.size(), i + 25) / Math.max(1, cmds.size()),
-                    "Installing the " + kind.what);
-        }
-        for (File f : dir.listFiles()) f.delete();   // the zip stays, for the next switch
-        dir.delete();
 
-        prefs().edit()
-                .putString(kind.prefLang, lang.code)
-                .putString(kind.prefWritten, String.join(",", ours))
-                .putString(kind.prefBundles, String.join(",", wanted.keySet()))
-                .apply();
-        // counted per bundle, not per cached copy: old game versions leave extra copies
-        int notCached = wanted.size() - seen.size();
-        int foreign = seen.size() - done.size();
-        log("✓ Translated " + kind.what + ": " + done.size() + " of " + wanted.size() + " bundles in " + lang.name
-                + (foreign > 0 ? ", " + foreign + " left as they are (changed by a game update)" : "")
-                + (notCached > 0 ? ", " + notCached + " not downloaded by the game yet" : "") + ".");
+            // overwrite every cached copy that is stock or ours (menus or images); keep its __info valid
+            progress(p0 + span / 2, "Installing the " + kind.what);
+            Set<String> ours = csvSet(prefs().getString(kind.prefWritten, ""));
+            for (String[] so : wanted.values()) ours.add(so[1]);
+            Set<String> anyOurs = new java.util.HashSet<>(ours);
+            anyOurs.addAll(csvSet(prefs().getString(PREF_PREFABS_WRITTEN, "")));
+            anyOurs.addAll(csvSet(prefs().getString(PREF_IMAGES_WRITTEN, "")));
+            List<String> cmds = new ArrayList<>();
+            Set<String> done = new java.util.HashSet<>();
+            Set<String> seen = new java.util.HashSet<>();
+            Set<String> attempted = new java.util.HashSet<>();
+            for (Map.Entry<String, String> c : cachedMd5s(wanted.keySet()).entrySet()) {
+                String rel = c.getKey(), md5 = c.getValue();
+                String name = rel.substring(0, rel.indexOf('/'));
+                String[] so = wanted.get(name);
+                if (so == null) continue;
+                seen.add(name);
+                String info = GAME_SHARED + rel.substring(0, rel.lastIndexOf('/')) + "/__info";
+                String fixInfo = "[ -s '" + info + "' ] || printf '%s\\n%s\\n1\\n__data\\n' -1 \"$(date +%s)\" > '" + info + "'";
+                if (md5.equals(so[1])) {
+                    attempted.add(name);
+                    cmds.add(fixInfo + "; echo 'UI_OK " + name + "'");
+                } else if (md5.equals(so[0]) || anyOurs.contains(md5)) {
+                    attempted.add(name);
+                    cmds.add("cp '" + new File(dir, name).getAbsolutePath() + "' '" + GAME_SHARED + rel
+                            + "' && echo 'UI_OK " + name + "'; " + fixInfo);
+                }
+                // anything else is a game build we don't know (an older copy the game no longer
+                // loads, or a newer one): leave it as it is
+            }
+            for (int i = 0; i < cmds.size(); i += 25) {
+                String out = shell(String.join("; ", cmds.subList(i, Math.min(cmds.size(), i + 25)))).out;
+                for (String line : out.split("\n")) {
+                    String trimmed = line.trim();
+                    if (trimmed.startsWith("UI_OK ")) {
+                        String okName = trimmed.substring(6);
+                        if (attempted.contains(okName)) done.add(okName);
+                    }
+                }
+                progress(p0 + span / 2 + (span / 2) * Math.min(cmds.size(), i + 25) / Math.max(1, cmds.size()),
+                        "Installing the " + kind.what);
+            }
+
+            if (!done.isEmpty()) {
+                prefs().edit()
+                        .putString(kind.prefLang, lang.code)
+                        .putString(kind.prefWritten, String.join(",", ours))
+                        .putString(kind.prefBundles, String.join(",", wanted.keySet()))
+                        .apply();
+            }
+            // counted per bundle, not per cached copy: old game versions leave extra copies
+            int notCached = wanted.size() - seen.size();
+            int foreign = seen.size() - attempted.size();
+            int copyFailed = attempted.size() - done.size();
+            log((done.isEmpty() && copyFailed > 0 ? "✗ " : "✓ ")
+                    + "Translated " + kind.what + ": " + done.size() + " of " + wanted.size() + " bundles in " + lang.name
+                    + (copyFailed > 0 ? ", " + copyFailed + " failed to copy" : "")
+                    + (foreign > 0 ? ", " + foreign + " left as they are (changed by a game update)" : "")
+                    + (notCached > 0 ? ", " + notCached + " not downloaded by the game yet" : "") + ".");
+        } finally {
+            File[] unpacked = dir.listFiles();
+            if (unpacked != null) for (File f : unpacked) f.delete();   // the zip stays, for the next switch
+            dir.delete();
+        }
     }
 
     private static byte[] readAll(java.io.InputStream in) throws java.io.IOException {
@@ -2179,7 +2234,7 @@ public class MainActivity extends Activity {
     }
 
     private void showRedownloadDialog() {
-        if (isFinishing()) return;
+        if (isFinishing() || isDestroyed()) return;
         showSheet("One more step", "Building the translation needs the game's Japanese text, "
                         + "and the game currently holds a patch.\n\nOpen the game until the title "
                         + "screen so it downloads its Japanese text, close it, then come back and tap "
@@ -2215,46 +2270,50 @@ public class MainActivity extends Activity {
     private byte[][] gameKeys(File dir) throws Exception {
         String q = dir.getAbsolutePath();
         File metaF = new File(dir, "global-metadata.dat");
-        ShellResult r2 = shell("cp '" + META_PATH + "' '" + q
-                + "/global-metadata.dat' && echo OK2");
-        if (!r2.out.contains("OK2")) {
-            String mp = shell("find /sdcard/Android/data/" + GAME_PKG
-                    + "/files -name global-metadata.dat 2>/dev/null | head -1").firstLine();
-            if (!mp.startsWith("/"))
-                throw new AutoPatchFail("the game's global-metadata.dat was not found.");
-            r2 = shell("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
-            if (!r2.out.contains("OK2"))
-                throw new AutoPatchFail("could not read the game's metadata" + r2.reason() + ".");
-        }
-
-        Map<String, Object> v = loadReleaseInfo();
-        int keyOff = FALLBACK_KEY_OFF, ivOff = FALLBACK_IV_OFF;
-        boolean liveOffsets = false;
-        if (v != null && v.containsKey("meta_key_off") && v.containsKey("meta_iv_off")) {
-            try {
-                keyOff = Long.decode(String.valueOf(v.get("meta_key_off")).trim()).intValue();
-                ivOff = Long.decode(String.valueOf(v.get("meta_iv_off")).trim()).intValue();
-                liveOffsets = true;
-            } catch (Throwable ignored) {
-                keyOff = FALLBACK_KEY_OFF;
-                ivOff = FALLBACK_IV_OFF;
-            }
-        }
-        if (!liveOffsets) {
-            log("⚠ WARNING: no release info (version.json) — using BUILT-IN AES key offsets "
-                    + String.format(Locale.US, "0x%x/0x%x", keyOff, ivOff) + ".\n"
-                    + "⚠ These go stale with game updates. Go online and retry if this fails.");
-        }
-        builtInKeyOffsets = !liveOffsets;
-        byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
-        byte[][] keys;
         try {
-            keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
-        } catch (IllegalArgumentException e) {
-            throw new AutoPatchFail(keyMismatch());
-        }
+            ShellResult r2 = shell("cp '" + META_PATH + "' '" + q
+                    + "/global-metadata.dat' && echo OK2");
+            if (!r2.out.contains("OK2")) {
+                String mp = shell("find /sdcard/Android/data/" + GAME_PKG
+                        + "/files -name global-metadata.dat 2>/dev/null | head -1").firstLine();
+                if (!mp.startsWith("/"))
+                    throw new AutoPatchFail("the game's global-metadata.dat was not found.");
+                r2 = shell("cp '" + mp + "' '" + q + "/global-metadata.dat' && echo OK2");
+                if (!r2.out.contains("OK2"))
+                    throw new AutoPatchFail("could not read the game's metadata" + r2.reason() + ".");
+            }
 
-        return keys;
+            Map<String, Object> v = loadReleaseInfo();
+            int keyOff = FALLBACK_KEY_OFF, ivOff = FALLBACK_IV_OFF;
+            boolean liveOffsets = false;
+            if (v != null && v.containsKey("meta_key_off") && v.containsKey("meta_iv_off")) {
+                try {
+                    keyOff = Long.decode(String.valueOf(v.get("meta_key_off")).trim()).intValue();
+                    ivOff = Long.decode(String.valueOf(v.get("meta_iv_off")).trim()).intValue();
+                    liveOffsets = true;
+                } catch (Throwable ignored) {
+                    keyOff = FALLBACK_KEY_OFF;
+                    ivOff = FALLBACK_IV_OFF;
+                }
+            }
+            if (!liveOffsets) {
+                log("⚠ WARNING: no release info (version.json) — using BUILT-IN AES key offsets "
+                        + String.format(Locale.US, "0x%x/0x%x", keyOff, ivOff) + ".\n"
+                        + "⚠ These go stale with game updates. Go online and retry if this fails.");
+            }
+            builtInKeyOffsets = !liveOffsets;
+            byte[] meta = java.nio.file.Files.readAllBytes(metaF.toPath());
+            byte[][] keys;
+            try {
+                keys = MasterCrypto.extractKeys(meta, keyOff, ivOff);
+            } catch (IllegalArgumentException e) {
+                throw new AutoPatchFail(keyMismatch());
+            }
+
+            return keys;
+        } finally {
+            metaF.delete();
+        }
     }
 
     private void doAutoPatch() throws Exception {
@@ -2276,113 +2335,118 @@ public class MainActivity extends Activity {
         if (dir == null) throw new AutoPatchFail("app storage is unavailable.");
         String q = dir.getAbsolutePath();
         File stockF = new File(dir, "stock_new.__data");
-        ShellResult r1 = shell("cp '" + srcBundle + "' '" + q
-                + "/stock_new.__data' && echo OK1");
-        if (!r1.out.contains("OK1"))
-            throw new AutoPatchFail("could not read the game's language pack" + r1.reason() + ".");
-        progress(5, "Reading the game's keys");
-        byte[][] keys = gameKeys(dir);
-        PatchLanguage lang = selectedLanguage();
-        log("Language: " + lang.name + ".");
+        File outF = new File(dir, "patched.__data");
+        try {
+            ShellResult r1 = shell("cp '" + srcBundle + "' '" + q
+                    + "/stock_new.__data' && echo OK1");
+            if (!r1.out.contains("OK1"))
+                throw new AutoPatchFail("could not read the game's language pack" + r1.reason() + ".");
+            progress(5, "Reading the game's keys");
+            byte[][] keys = gameKeys(dir);
+            PatchLanguage lang = selectedLanguage();
+            log("Language: " + lang.name + ".");
 
-        // 4. translation cache (refreshed whenever the release is newer)
-        progress(7, "Loading the translations");
-        ensureFreshCache(lang);
-        Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile(lang)));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> cacheRaw = (Map<String, Object>) pl.get("cache");
-        if (cacheRaw == null) throw new AutoPatchFail("translation cache is malformed — retry while online.");
-        Map<String, String> cache = new java.util.LinkedHashMap<>(cacheRaw.size());
-        for (Map.Entry<String, Object> e : cacheRaw.entrySet())
-            cache.put(e.getKey(), String.valueOf(e.getValue()));
-        Map<String, Map<String, String>> hand = new java.util.LinkedHashMap<>();
-        Object handObj = pl.get("hand");
-        if (handObj instanceof Map) {
+            // 4. translation cache (refreshed whenever the release is newer)
+            progress(7, "Loading the translations");
+            ensureFreshCache(lang);
+            Map<String, Object> pl = JsonMap.parseObject(readSmall(cacheFile(lang)));
             @SuppressWarnings("unchecked")
-            Map<String, Object> hm = (Map<String, Object>) handObj;
-            for (Map.Entry<String, Object> e : hm.entrySet()) {
+            Map<String, Object> cacheRaw = (Map<String, Object>) pl.get("cache");
+            if (cacheRaw == null) throw new AutoPatchFail("translation cache is malformed — retry while online.");
+            Map<String, String> cache = new java.util.LinkedHashMap<>(cacheRaw.size());
+            for (Map.Entry<String, Object> e : cacheRaw.entrySet())
+                cache.put(e.getKey(), String.valueOf(e.getValue()));
+            Map<String, Map<String, String>> hand = new java.util.LinkedHashMap<>();
+            Object handObj = pl.get("hand");
+            if (handObj instanceof Map) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> inner = (Map<String, Object>) e.getValue();
-                Map<String, String> dst = new java.util.LinkedHashMap<>();
-                for (Map.Entry<String, Object> e2 : inner.entrySet())
-                    dst.put(e2.getKey(), String.valueOf(e2.getValue()));
-                hand.put(e.getKey(), dst);
+                Map<String, Object> hm = (Map<String, Object>) handObj;
+                for (Map.Entry<String, Object> e : hm.entrySet()) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> inner = (Map<String, Object>) e.getValue();
+                    Map<String, String> dst = new java.util.LinkedHashMap<>();
+                    for (Map.Entry<String, Object> e2 : inner.entrySet())
+                        dst.put(e2.getKey(), String.valueOf(e2.getValue()));
+                    hand.put(e.getKey(), dst);
+                }
             }
-        }
 
-        // 5. known table names (bundled asset)
-        List<String> names = tableNames();
+            // 5. known table names (bundled asset)
+            List<String> names = tableNames();
 
-        // 6. translate from Japanese. A patch in the game's pack is no use: take the
-        // saved Japanese copy when it holds the same rows (the same game version).
-        String liveMd5 = md5Of(stockF).toLowerCase(Locale.US);
-        File srcF = stockF;
-        if (isKnownPatch(liveMd5)) {
-            if (!originalFits(stockF, keys, names)) {
+            // 6. translate from Japanese. A patch in the game's pack is no use: take the
+            // saved Japanese copy when it holds the same rows (the same game version).
+            String liveMd5 = md5Of(stockF).toLowerCase(Locale.US);
+            File srcF = stockF;
+            if (isKnownPatch(liveMd5)) {
+                if (!originalFits(stockF, keys, names)) {
+                    needJapanese();
+                    return;
+                }
+                log("The game has a patch installed: starting from the saved Japanese pack.");
+                srcF = originalJa();
+            }
+
+            // 7. patch fully on-device. Per-table notes stay out of the UI log;
+            // only the summary below is shown.
+            byte[] stock;
+            List<String> notes = new ArrayList<>();
+            AutoPatcher.Result res;
+            while (true) {
+                stock = java.nio.file.Files.readAllBytes(srcF.toPath());
+                try {
+                    res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add,
+                            (pct, phase) -> progress(10 + pct * 80 / 100, phase));
+                } catch (IllegalStateException e) {
+                    if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch());
+                    throw e;
+                }
+                if (res.sourceIsJapanese()) break;
+                // someone else's patch, or a saved copy that isn't Japanese after all
+                if (srcF != stockF) {
+                    prefs().edit().remove(PREF_ORIGINAL_MD5).apply();
+                } else if (originalFits(stockF, keys, names)) {
+                    log("The game's pack is already translated: starting from the saved Japanese pack.");
+                    srcF = originalJa();
+                    continue;
+                }
                 needJapanese();
                 return;
             }
-            log("The game has a patch installed: starting from the saved Japanese pack.");
-            srcF = originalJa();
-        }
+            if (srcF == stockF) keepOriginal(stockF, liveMd5);
+            progress(92, "Installing");
+            java.nio.file.Files.write(outF.toPath(), res.data);
+            prefs().edit()
+                    .putString(PREF_AUTOPATCH_MD5, MasterCrypto.md5Hex(res.data).toLowerCase(Locale.US))
+                    .putString(PREF_AUTOPATCH_BASE, MasterCrypto.md5Hex(stock).toLowerCase(Locale.US))
+                    .apply();
 
-        // 7. patch fully on-device. Per-table notes stay out of the UI log;
-        // only the summary below is shown.
-        byte[] stock;
-        List<String> notes = new ArrayList<>();
-        AutoPatcher.Result res;
-        while (true) {
-            stock = java.nio.file.Files.readAllBytes(srcF.toPath());
-            try {
-                res = AutoPatcher.run(stock, keys[0], keys[1], cache, hand, names, notes::add,
-                        (pct, phase) -> progress(10 + pct * 80 / 100, phase));
-            } catch (IllegalStateException e) {
-                if (String.valueOf(e.getMessage()).contains("AES keys")) throw new AutoPatchFail(keyMismatch());
-                throw e;
+            StringBuilder sum = new StringBuilder("Patched " + res.patched + "/" + res.tablesFound + " tables");
+            int missing = names.size() - res.tablesFound;
+            if (missing > 0) sum.append(", ").append(missing).append(" not found");
+            if (res.fitAfterRevert > 0) sum.append(", ").append(res.fitAfterRevert).append(" trimmed to fit");
+            if (res.jaOnly > 0) sum.append(", ").append(res.jaOnly).append(" kept Japanese");
+            sum.append(".\n").append(String.format(Locale.US, "%,d", res.leftJaCells))
+                    .append(" cells left Japanese (new content).");
+            log(sum.toString());
+
+            // 8. write back over every live copy
+            for (String dest : dests) {
+                ShellResult rr = shell("cp '" + outF.getAbsolutePath() + "' '" + dest
+                        + "' && echo CP_OK; chmod 0666 '" + dest + "' 2>/dev/null");
+                if (!rr.out.contains("CP_OK"))
+                    throw new AutoPatchFail("could not write " + shortPath(dest) + rr.reason() + ".");
             }
-            if (res.sourceIsJapanese()) break;
-            // someone else's patch, or a saved copy that isn't Japanese after all
-            if (srcF != stockF) {
-                prefs().edit().remove(PREF_ORIGINAL_MD5).apply();
-            } else if (originalFits(stockF, keys, names)) {
-                log("The game's pack is already translated: starting from the saved Japanese pack.");
-                srcF = originalJa();
-                continue;
-            }
-            needJapanese();
-            return;
+            syncUi(lang, 93, 99);
+            progress(100, "Installed");
+            log("✓ Auto-patch installed to " + dests.size()
+                    + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");
+            doneLabel = lang.isDefault() ? "Auto-patch installed" : lang.name + " auto-patch installed";
+            String title = doneLabel;
+            ui.post(() -> showInstalledDialog(title));
+        } finally {
+            stockF.delete();
+            outF.delete();
         }
-        if (srcF == stockF) keepOriginal(stockF, liveMd5);
-        progress(92, "Installing");
-        File outF = new File(dir, "patched.__data");
-        java.nio.file.Files.write(outF.toPath(), res.data);
-        prefs().edit()
-                .putString(PREF_AUTOPATCH_MD5, MasterCrypto.md5Hex(res.data).toLowerCase(Locale.US))
-                .putString(PREF_AUTOPATCH_BASE, MasterCrypto.md5Hex(stock).toLowerCase(Locale.US))
-                .apply();
-
-        StringBuilder sum = new StringBuilder("Patched " + res.patched + "/" + res.tablesFound + " tables");
-        int missing = names.size() - res.tablesFound;
-        if (missing > 0) sum.append(", ").append(missing).append(" not found");
-        if (res.fitAfterRevert > 0) sum.append(", ").append(res.fitAfterRevert).append(" trimmed to fit");
-        if (res.jaOnly > 0) sum.append(", ").append(res.jaOnly).append(" kept Japanese");
-        sum.append(".\n").append(String.format(Locale.US, "%,d", res.leftJaCells))
-                .append(" cells left Japanese (new content).");
-        log(sum.toString());
-
-        // 8. write back over every live copy
-        for (String dest : dests) {
-            ShellResult rr = shell("cp '" + outF.getAbsolutePath() + "' '" + dest
-                    + "' && echo CP_OK; chmod 0666 '" + dest + "' 2>/dev/null");
-            if (!rr.out.contains("CP_OK"))
-                throw new AutoPatchFail("could not write " + shortPath(dest) + rr.reason() + ".");
-        }
-        syncUi(lang, 93, 99);
-        progress(100, "Installed");
-        log("✓ Auto-patch installed to " + dests.size()
-                + (dests.size() == 1 ? " cache location" : " cache locations") + ". Launch the game.");
-        doneLabel = lang.isDefault() ? "Auto-patch installed" : lang.name + " auto-patch installed";
-        String title = doneLabel;
-        ui.post(() -> showInstalledDialog(title));
     }
 }

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Merge one locale's editable translation sources into the compact translation_cache.json.
 
@@ -177,10 +177,17 @@ foreach ($t in (Sort-Ordinal @($canonical.Hand.Keys))) {
 }
 $result = [ordered]@{ cache = $sortedCache; hand = $sortedHand }
 
-# ConvertTo-Json escapes non-ASCII as \uXXXX; the original uses literal UTF-8.
-# So serialize then unescape \uXXXX sequences back to real characters.
+# ConvertTo-Json escapes non-ASCII as \uXXXX (and on PS 5.1, some ASCII like <, >, &, ').
+# Unescape non-ASCII (\u0080+) back to literal UTF-8 while keeping ASCII/control
+# escapes (< 0x0080) and literal \\uXXXX sequences intact.
 $json = $result | ConvertTo-Json -Depth 6 -Compress
-$json = [regex]::Replace($json, '\\u([0-9a-fA-F]{4})', { param($m) [char][int]("0x" + $m.Groups[1].Value) })
+$json = [regex]::Replace($json, '\\(\\|u([0-9a-fA-F]{4}))', {
+    param($m)
+    if ($m.Groups[1].Value -eq '\') { return $m.Value }
+    $cp = [int]("0x" + $m.Groups[2].Value)
+    if ($cp -lt 0x0080) { return $m.Value }
+    return [string][char]$cp
+})
 
 [IO.File]::WriteAllText($Out, $json, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "wrote $Out  ($((Get-Item $Out).Length) B; locale=$Locale cache=$($sortedCache.Count) hand-tables=$($sortedHand.Count))"

@@ -46,6 +46,8 @@ public final class UnityFs {
         byte[] orig;        // original file bytes
     }
 
+    private static final LZ4Factory LZ4 = LZ4Factory.fastestJavaInstance();
+
     private UnityFs() {}
 
     // -- big-endian helpers -------------------------------------------------
@@ -96,12 +98,14 @@ public final class UnityFs {
         h.ciSize = beInt(data, i); i += 4;
         h.uiSize = beInt(data, i); i += 4;
         h.flags = beInt(data, i); i += 4;
-        int padn = (16 - (i % 16)) % 16;
+        if (h.ver >= 7) {
+            i += (16 - (i % 16)) % 16;
+        }
         if ((h.flags & 0x80) != 0) {
             h.blocksInfoAt = data.length - h.ciSize;
             h.dataStart = i;
         } else {
-            h.blocksInfoAt = i + padn;
+            h.blocksInfoAt = i;
             h.dataStart = h.blocksInfoAt + h.ciSize;
         }
         if ((h.flags & 0x200) != 0) { // BlockInfoNeedPaddingAtStart
@@ -119,7 +123,7 @@ public final class UnityFs {
         }
         if (comp == 1) return lzma(chunk, off, len, uSize);
         if (comp == 2 || comp == 3) {
-            LZ4FastDecompressor d = LZ4Factory.fastestInstance().fastDecompressor();
+            LZ4FastDecompressor d = LZ4.fastDecompressor();
             byte[] out = new byte[uSize];
             d.decompress(chunk, off, out, 0, uSize);
             return out;
@@ -217,7 +221,7 @@ public final class UnityFs {
     }
 
     private static byte[] lz4Hc(byte[] raw, int level) {
-        LZ4Compressor c = LZ4Factory.fastestInstance().highCompressor(level);
+        LZ4Compressor c = LZ4.highCompressor(level);
         return c.compress(raw);
     }
 
@@ -251,6 +255,7 @@ public final class UnityFs {
                 }
                 if (best != null && best.length <= b.c) {
                     nb.c = best.length;
+                    nb.flags = (b.flags & ~0x3F) | 3;
                     payloads.add(best);
                 } else {
                     // store uncompressed; block table rewritten, file grows
@@ -263,10 +268,16 @@ public final class UnityFs {
         }
         byte[] biRaw = buildBlocksInfo(fs.guid, newBlocks, fs.nodes);
         int biFlag = hdr.flags & 0x3F;
+        int outFlags = hdr.flags;
         byte[] biC;
-        if (biFlag == 2 || biFlag == 3) biC = lz4Hc(biRaw, 9);
-        else if (biFlag == 0) biC = biRaw;
-        else throw new IllegalStateException("bi flag " + biFlag);
+        if (biFlag == 1 || biFlag == 2 || biFlag == 3) {
+            biC = lz4Hc(biRaw, 9);
+            if (biFlag == 1) outFlags = (hdr.flags & ~0x3F) | 3;
+        } else if (biFlag == 0) {
+            biC = biRaw;
+        } else {
+            throw new IllegalStateException("bi flag " + biFlag);
+        }
 
         ByteArrayOutputStream w = new ByteArrayOutputStream();
         byte[] sig = "UnityFS\0".getBytes(StandardCharsets.US_ASCII);
@@ -280,18 +291,20 @@ public final class UnityFs {
         putLong(w, 0);
         putInt(w, biC.length);
         putInt(w, biRaw.length);
-        putInt(w, hdr.flags);
-        if ((hdr.flags & 0x80) == 0) {
+        putInt(w, outFlags);
+        if (hdr.ver >= 7) {
             int padn = (16 - (w.size() % 16)) % 16;
             for (int i = 0; i < padn; i++) w.write(0);
+        }
+        if ((outFlags & 0x80) == 0) {
             w.write(biC, 0, biC.length);
-            if ((hdr.flags & 0x200) != 0) {
+            if ((outFlags & 0x200) != 0) {
                 int padn2 = (16 - (w.size() % 16)) % 16;
                 for (int i = 0; i < padn2; i++) w.write(0);
             }
             for (byte[] p : payloads) w.write(p, 0, p.length);
         } else {
-            if ((hdr.flags & 0x200) != 0) {
+            if ((outFlags & 0x200) != 0) {
                 int padn2 = (16 - (w.size() % 16)) % 16;
                 for (int i = 0; i < padn2; i++) w.write(0);
             }
