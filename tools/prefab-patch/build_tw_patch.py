@@ -659,6 +659,15 @@ def main():
             summary["locales"][loc]["prefabs_untranslated"] = sorted(o["untranslated"])
 
     sum_path = os.path.join(a.out, "tw-build-summary.json")
+    if a.skip_ui and os.path.exists(sum_path):
+        prev_sum = json.load(open(sum_path, encoding="utf-8"))
+        for loc in a.locale:
+            prev_loc = prev_sum.get("locales", {}).get(loc, {})
+            for k in ("prefabs", "prefabs_md5", "prefabs_size", "prefabs_bundles",
+                      "images", "images_md5", "images_size", "images_bundles",
+                      "textures_count", "prefabs_text_fields", "prefabs_untranslated"):
+                if k in prev_loc and k not in summary["locales"][loc]:
+                    summary["locales"][loc][k] = prev_loc[k]
     with open(sum_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
     print(f"\nWrote {sum_path}", flush=True)

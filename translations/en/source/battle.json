@@ -36,7 +36,7 @@
   "{0}ダメージ": "{0} damage",
   "{0}ラウンド以内にバトルをクリアする": "Clear a battle within {0} round(s)",
   "{0}人以上戦闘不能にならずクリア": "Clear with {0} or more allies not becoming unable to battle",
-  "{0}体のキャラクターのスキル{2}をLv.{1}以上にする": "Raise {2} of {0} character(s) to Lv.{1} or higher",
+  "{0}体のキャラクターのスキル{2}をLv.{1}以上にする": "Raise Skill {2} of {0} character(s) to Lv.{1} or higher",
   "{0}階層の敵に挑戦します。<br>勝利すると{1}階層までスキップし、その階層までの報酬を全て受け取ることができます。<br>※パーティーの残り戦闘可能数もスキップした階層分減少します。": "Challenge the enemies on Floor {0}.<br>Winning skips you to Floor {1}, and you receive all rewards up to that floor.<br>*The party's remaining battle count also decreases by the number of skipped floors.",
   "{1}（{0}ターン分）": "{1} ({0} turns worth)",
   "{1}（{0}ターン）": "{1} ({0} turns)",
