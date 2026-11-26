@@ -116,22 +116,39 @@ final class PatchLanguage {
 
     /** English from the top-level keys; works with any version.json ever shipped. */
     static PatchLanguage english(Map<String, Object> v) {
-        return new PatchLanguage(DEFAULT_CODE, "English", "__data",
-                parseLong(str(v, "patch_size")), str(v, "patch_md5"),
-                "translation_cache.json", str(v, "cache_md5"),
-                str(v, "built_at"), str(v, "stock_md5"), true,
-                safeAsset(str(v, "images")), str(v, "images_md5"), parseLong(str(v, "images_size")),
-                safeAsset(str(v, "prefabs")), str(v, "prefabs_md5"), parseLong(str(v, "prefabs_size")));
+        return english(v, GameEdition.JP);
     }
 
-    /** English first, then every published locale in version.json order. */
+    /** English entry for a specific game edition (top-level for JP, "tw" block for TW). */
+    static PatchLanguage english(Map<String, Object> block, GameEdition ed) {
+        Map<String, Object> m = block != null ? block : new java.util.HashMap<>();
+        String patch = safeAsset(str(m, "patch"));
+        if (patch == null) patch = ed.defaultPatchAsset;
+        String cache = safeAsset(str(m, "cache"));
+        if (cache == null) cache = ed.defaultCacheAsset;
+        return new PatchLanguage(DEFAULT_CODE, "English", patch,
+                parseLong(str(m, "patch_size")), str(m, "patch_md5"),
+                cache, str(m, "cache_md5"),
+                str(m, "built_at"), str(m, "stock_md5"), true,
+                safeAsset(str(m, "images")), str(m, "images_md5"), parseLong(str(m, "images_size")),
+                safeAsset(str(m, "prefabs")), str(m, "prefabs_md5"), parseLong(str(m, "prefabs_size")));
+    }
+
+    /** English first, then every published locale in version.json order (JP top-level). */
     static List<PatchLanguage> fromVersion(Map<String, Object> v) {
+        return fromVersionForEdition(v, GameEdition.JP);
+    }
+
+    /** English first, then every published locale for the given game edition. */
+    static List<PatchLanguage> fromVersionForEdition(Map<String, Object> v, GameEdition ed) {
         List<PatchLanguage> out = new ArrayList<>();
         if (v == null) return out;
-        out.add(english(v));
-        Object locs = v.get("locales");
+        Map<String, Object> block = ed.versionBlock(v);
+        if (block == null) return out;
+        out.add(english(block, ed));
+        Object locs = block.get("locales");
         if (!(locs instanceof Map)) return out;
-        String gameStock = str(v, "stock_md5");
+        String gameStock = str(block, "stock_md5");
         for (Map.Entry<?, ?> e : ((Map<?, ?>) locs).entrySet()) {
             String code = String.valueOf(e.getKey());
             if (DEFAULT_CODE.equals(code) || !SAFE_CODE.matcher(code).matches()

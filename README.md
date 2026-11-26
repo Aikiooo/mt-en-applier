@@ -31,6 +31,8 @@ Every platform installs the same translation, from the rolling
 
 ### Android phone
 
+Supports both the **Japan** (`jp.gree_ent.mushoku`) and **Taiwan / HK / Macau** (`com.cayenne.mtr`) Android clients (auto-detected; if both are installed, a **Game edition** picker appears at the top of the app). Rooted devices (`su`) are detected automatically and bypass Shizuku.
+
 You need Android 11 or newer and [Shizuku](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api)
 (free; it lets the app write into the game's folder without root).
 

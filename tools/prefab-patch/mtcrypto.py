@@ -16,7 +16,11 @@ import UnityPy
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 
-KNOWN_OFFSETS = [(0xBA5AB8, 0xBA8538), (0xBC3DF0, 0xBC6870)]  # PC 1.2.0, then Android (client 1.2.0)
+KNOWN_OFFSETS = [
+    (0xBA5AB8, 0xBA8538),  # PC 1.2.0
+    (0xBC3DF0, 0xBC6870),  # Android JP 1.2.0
+    (0xC8C5E8, 0xC914C0),  # Android TW 1.1.3
+]
 
 
 def decode(raw):

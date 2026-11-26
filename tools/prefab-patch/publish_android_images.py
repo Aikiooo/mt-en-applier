@@ -37,6 +37,7 @@ def gh(*args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--locale", required=True)
+    ap.add_argument("--region", choices=["jp", "tw"], default="jp")
     ap.add_argument("--kind", nargs="+", choices=sorted(KINDS), default=["images"])
     ap.add_argument("--dir", default=os.path.join(REPO, "build"), help="where the zips are")
     ap.add_argument("--publish", action="store_true", help="upload (default: dry run)")
@@ -47,8 +48,9 @@ def main():
     if a.locale != default and a.locale not in registry["locales"]:
         raise SystemExit(f"unknown locale '{a.locale}' (translations/locales.json)")
     zips, fields = [], {}
+    reg_infix = "-tw" if a.region == "tw" else ""
     for kind in a.kind:
-        asset = f"{KINDS[kind]}-{a.locale}.zip"
+        asset = f"{KINDS[kind]}{reg_infix}-{a.locale}.zip"
         zpath = os.path.join(a.dir, asset)
         data = open(zpath, "rb").read()
         names = json.loads(zipfile.ZipFile(zpath).read("manifest.json"))
@@ -61,15 +63,19 @@ def main():
     gh("release", "download", TAG, "-p", "version.json", "-D", tmp, "--clobber")
     vpath = os.path.join(tmp, "version.json")
     v = json.load(open(vpath, encoding="utf-8"), object_pairs_hook=collections.OrderedDict)
+    root = v if a.region == "jp" else v.get("tw")
+    if root is None:
+        raise SystemExit("version.json has no 'tw' block yet: run publish_tw_patch.py first")
     if a.locale == default:
-        block = v
+        block = root
     else:
-        block = v.get("locales", {}).get(a.locale)
+        block = root.get("locales", {}).get(a.locale)
         if block is None:
-            raise SystemExit(f"'{a.locale}' is not published yet: run Publish-Locale.ps1 first")
+            raise SystemExit(f"'{a.locale}' is not published yet for region '{a.region}'")
     before = {k: block.get(k) for k in fields}
     block.update(fields)
-    where = "version.json" if a.locale == default else f"version.json locales.{a.locale}"
+    prefix = "version.json" if a.region == "jp" else "version.json tw"
+    where = prefix if a.locale == default else f"{prefix}.locales.{a.locale}"
     print(f"{where}:")
     for k in fields:
         print(f"  {k}: {before[k]!r} -> {fields[k]!r}")

@@ -44,10 +44,15 @@ public final class AutoPatcher {
         public int textCellsIn, jaCellsIn;
         public final List<String> lines = new ArrayList<>();
 
-        /** Whether the source was the Japanese original. The cache matches
-         *  Japanese text only, so patching anything else changes almost nothing. */
-        public boolean sourceIsJapanese() {
+        /** Whether the source was the stock CJK original (Japanese or Traditional Chinese).
+         *  Both JP stock and TW stock are ~99.4% CJK, whereas patched bundles are ~0%. */
+        public boolean sourceIsStockCjk() {
             return textCellsIn > 0 && jaCellsIn >= MIN_JA_SHARE * textCellsIn;
+        }
+
+        /** Backward-compatible alias for {@link #sourceIsStockCjk()}. */
+        public boolean sourceIsJapanese() {
+            return sourceIsStockCjk();
         }
     }
 
@@ -205,27 +210,26 @@ public final class AutoPatcher {
         int cols = header.split("\t", -1).length;
         LinkedHashMap<String, String[]> jaRows = parseRows(lines, cols);
 
-        // overlay the translation cache per cell (exact trimmed JA-string match)
+        // overlay (table, row_id) hand overrides first (last column), then string cache per cell
+        Map<String, String> hh = hand != null ? hand.get(h.name) : null;
         LinkedHashMap<String, String[]> rows = new LinkedHashMap<>();
         for (Map.Entry<String, String[]> e : jaRows.entrySet()) {
+            String rowId = e.getKey();
             String[] jv = e.getValue();
             String[] vals = new String[jv.length];
+            String handVal = hh != null ? hh.get(rowId) : null;
             for (int i = 0; i < jv.length; i++) {
                 if (hasLetter(jv[i])) r.textCellsIn++;
                 if (hasCjk(jv[i])) r.jaCellsIn++;
+                if (i == jv.length - 1 && handVal != null) {
+                    vals[i] = handVal;
+                    continue;
+                }
                 String en = cache.get(jaTrim(jv[i]));
                 if (en != null && !en.isEmpty()) vals[i] = en;
                 else { vals[i] = jv[i]; if (hasCjk(jv[i])) r.leftJaCells++; }
             }
-            rows.put(e.getKey(), vals);
-        }
-        // id-based hand overrides (last column)
-        Map<String, String> hh = hand.get(h.name);
-        if (hh != null) {
-            for (Map.Entry<String, String> e : hh.entrySet()) {
-                String[] row = rows.get(e.getKey());
-                if (row != null && row.length > 0) row[row.length - 1] = e.getValue();
-            }
+            rows.put(rowId, vals);
         }
 
         byte[] ct = MasterCrypto.encryptFit(MasterCrypto.toPlain(buildText(header, rows)),

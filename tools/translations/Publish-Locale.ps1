@@ -58,6 +58,8 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Locale,
+    # Target game region: 'jp' (default, top-level locales) or 'tw' (version.json tw.locales).
+    [ValidateSet('jp', 'tw')][string]$Region = 'jp',
     # A ready-made Android __data for this locale.
     [string]$PatchFile,
     # A ready-made PC (DMM) language bundle for this locale: exact stock size +
@@ -135,15 +137,22 @@ $versionPath = Join-Path $OutDir 'version.json'
 Invoke-WebRequest -UseBasicParsing -Uri "$releaseBase/version.json?t=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" -OutFile $versionPath
 $version = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-$cacheName = "translation_cache.$Locale.json"
-$patchName = "__data.$Locale"
+$cacheName = if ($Region -eq 'tw') { "translation_cache.tw.$Locale.json" } else { "translation_cache.$Locale.json" }
+$patchName = if ($Region -eq 'tw') { "__data.tw.$Locale" } else { "__data.$Locale" }
 $upload = @()
 
-if ($Unpublish) {
-    if ($version.locales -and $version.locales.PSObject.Properties[$Locale]) {
-        $version.locales.PSObject.Properties.Remove($Locale)
+$regionNode = if ($Region -eq 'tw') {
+    if (-not $version.PSObject.Properties['tw'] -or -not $version.tw) {
+        Fail "version.json has no 'tw' block yet; publish TW English first with tools/prefab-patch/publish_tw_patch.py"
     }
-    Write-Host "locale '$Locale' removed from version.json (release assets left in place, unlisted)"
+    $version.tw
+} else { $version }
+
+if ($Unpublish) {
+    if ($regionNode.locales -and $regionNode.locales.PSObject.Properties[$Locale]) {
+        $regionNode.locales.PSObject.Properties.Remove($Locale)
+    }
+    Write-Host "locale '$Locale' ($Region) removed from version.json (release assets left in place, unlisted)"
 } else {
     # --- coverage guard: never publish English under another language's name --
     function Count-Entries([string]$Dir) {
@@ -229,8 +238,8 @@ if ($Unpublish) {
     if ($BuildPatch -or $PatchFile) {
         if (-not $StockMd5) { Fail "pass -Stock (or -StockMd5) so the app can tell when this patch goes stale" }
         $StockMd5 = $StockMd5.ToLowerInvariant()
-        if ($version.stock_md5 -and $StockMd5 -ne $version.stock_md5.ToLowerInvariant() -and -not $Force) {
-            Fail "patch stock md5 $StockMd5 != release stock_md5 $($version.stock_md5): built for another game build (-Force overrides; the app would hide the download anyway)"
+        if ($regionNode.stock_md5 -and $StockMd5 -ne $regionNode.stock_md5.ToLowerInvariant() -and -not $Force) {
+            Fail "patch stock md5 $StockMd5 != release stock_md5 $($regionNode.stock_md5): built for another game build (-Force overrides; the app would hide the download anyway)"
         }
         $block.patch      = $patchName
         $block.patch_size = (Get-Item $patchPath).Length
@@ -325,10 +334,10 @@ if ($Unpublish) {
     }
 
     # --- 3. merge into version.json ---------------------------------------------
-    if (-not $version.locales) {
-        $version | Add-Member -NotePropertyName locales -NotePropertyValue ([pscustomobject]@{}) -Force
+    if (-not $regionNode.PSObject.Properties['locales'] -or -not $regionNode.locales) {
+        $regionNode | Add-Member -NotePropertyName locales -NotePropertyValue ([pscustomobject]@{}) -Force
     }
-    $version.locales | Add-Member -NotePropertyName $Locale -NotePropertyValue ([pscustomobject]$block) -Force
+    $regionNode.locales | Add-Member -NotePropertyName $Locale -NotePropertyValue ([pscustomobject]$block) -Force
 }
 
 # Write BOM-free UTF-8: Set-Content -Encoding utf8 adds a BOM on Windows
